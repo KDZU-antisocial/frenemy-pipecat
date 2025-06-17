@@ -1,0 +1,6 @@
+pipecat>=0.1.0
+aiortc>=1.5.0
+deepgram-sdk>=2.12.0
+openai>=1.12.0
+cartesia>=0.1.0
+python-dotenv>=1.0.0 
