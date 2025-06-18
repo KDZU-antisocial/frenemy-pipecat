@@ -52,4 +52,8 @@ local_settings.py
 
 # Temporary files
 *.tmp
-*.temp 
+*.temp
+
+# Shell history
+.zsh_history
+.bash_history 
