@@ -1,15 +1,20 @@
 import os
 from dotenv import load_dotenv
 import pipecat
-from deepgram import Deepgram
+from deepgram import DeepgramClient
 import openai
 import cartesia
 
 # Load environment variables
 load_dotenv()
 
+# Get API keys
+deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
+if not deepgram_api_key:
+    raise ValueError("DEEPGRAM_API_KEY environment variable is not set")
+
 # Initialize services
-deepgram = Deepgram(os.getenv("DEEPGRAM_API_KEY"))
+deepgram = DeepgramClient(deepgram_api_key)
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 def main():
