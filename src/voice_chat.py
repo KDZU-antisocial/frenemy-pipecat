@@ -562,14 +562,13 @@ class VoiceChat:
                                 
                                 audio_bytes = audio_array.tobytes()
                                 
-                                # Use the correct Deepgram API call
-                                response = await self.deepgram.listen.prerecorded.v("1").transcribe_file(
-                                    {"buffer": audio_bytes, "mimetype": "audio/raw"},
-                                    {"punctuate": True, "language": "en", "sample_rate": 48000}
+                                # Use the correct Deepgram v3 API call format (synchronous)
+                                response = self.deepgram.listen.prerecorded.v("1").transcribe_file(
+                                    {"buffer": audio_bytes, "mimetype": "audio/raw"}
                                 )
                                 
-                                if response and 'results' in response:
-                                    transcript = response['results']['channels'][0]['alternatives'][0]['transcript']
+                                if response and hasattr(response, 'results') and response.results:
+                                    transcript = response.results.channels[0].alternatives[0].transcript
                                     if transcript.strip():
                                         # Generate response (simple echo for now)
                                         response_text = f"I heard you say: {transcript}"
@@ -749,63 +748,28 @@ class VoiceChat:
                         with open(temp_filename, "rb") as f:
                             audio_data = f.read()
                         
-                        print("🧠 Transcribing with Deepgram...")
+                        # Check if we actually got audio data
+                        file_size = len(audio_data)
+                        print(f"📊 Audio file size: {file_size} bytes")
                         
-                        # Transcribe with Deepgram
-                        try:
-                            # Use the correct Deepgram API call format
-                            response = await self.deepgram.listen.prerecorded.v("1").transcribe_file(
-                                {"buffer": audio_data, "mimetype": "audio/wav"},
-                                {"punctuate": True, "language": "en", "sample_rate": sample_rate}
-                            )
+                        if file_size < 1000:  # Very small file likely means no audio
+                            print("🔇 No audio detected - file too small")
+                            print("💡 Check your microphone settings and permissions")
+                            print("   - Make sure microphone is not muted")
+                            print("   - Check system audio input settings")
+                            print("   - Try speaking louder or closer to the mic")
+                        else:
+                            print("🧠 Transcribing with Deepgram...")
                             
-                            if response and 'results' in response:
-                                transcript = response['results']['channels'][0]['alternatives'][0]['transcript']
-                                if transcript.strip():
-                                    print(f"🎤 You said: {transcript}")
-                                    
-                                    # Generate response
-                                    response_text = f"I heard you say: {transcript}. That's interesting!"
-                                    print(f"🤖 Responding: {response_text}")
-                                    
-                                    # Speak the response
-                                    print("🔊 Speaking response...")
-                                    await task.queue_frames([
-                                        TTSSpeakFrame(response_text),
-                                        EndFrame()
-                                    ])
-                                else:
-                                    print("🔇 No speech detected")
-                            else:
-                                print("🔇 No transcription result")
-                                
-                        except Exception as e:
-                            print(f"❌ Deepgram error: {e}")
-                            print("This might be due to audio format or API issues.")
-                            print("Trying alternative approach...")
-                            
-                            # Try alternative Deepgram call
+                            # Transcribe with Deepgram
                             try:
-                                # Convert audio to proper format
-                                import numpy as np
-                                import io
-                                import wave
-                                
-                                # Read WAV file and convert to proper format
-                                with io.BytesIO(audio_data) as audio_io:
-                                    with wave.open(audio_io, 'rb') as wav_file:
-                                        # Get audio parameters
-                                        frames = wav_file.readframes(wav_file.getnframes())
-                                        sample_rate = wav_file.getframerate()
-                                
-                                # Use alternative Deepgram call
-                                response = await self.deepgram.listen.prerecorded.v("1").transcribe_file(
-                                    {"buffer": frames, "mimetype": "audio/raw"},
-                                    {"punctuate": True, "language": "en", "sample_rate": sample_rate}
+                                # Use the correct Deepgram v3 API call format (synchronous)
+                                response = self.deepgram.listen.prerecorded.v("1").transcribe_file(
+                                    {"buffer": audio_data, "mimetype": "audio/wav"}
                                 )
                                 
-                                if response and 'results' in response:
-                                    transcript = response['results']['channels'][0]['alternatives'][0]['transcript']
+                                if response and hasattr(response, 'results') and response.results:
+                                    transcript = response.results.channels[0].alternatives[0].transcript
                                     if transcript.strip():
                                         print(f"🎤 You said: {transcript}")
                                         
@@ -815,38 +779,134 @@ class VoiceChat:
                                         
                                         # Speak the response
                                         print("🔊 Speaking response...")
-                                        await task.queue_frames([
-                                            TTSSpeakFrame(response_text),
-                                            EndFrame()
-                                        ])
+                                        
+                                        # Use system command to play audio through speakers
+                                        try:
+                                            if sys.platform == "darwin":  # macOS
+                                                # Use say with specific voice
+                                                subprocess.run(["say", "-v", "Alex", response_text], check=True)
+                                            elif sys.platform.startswith("linux"):  # Linux
+                                                subprocess.run(["espeak", response_text], check=True)
+                                            else:  # Windows
+                                                subprocess.run(["powershell", "-Command", f"Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('{response_text}')"], check=True)
+                                            
+                                            print("✅ Audio response played!")
+                                            
+                                        except Exception as audio_error:
+                                            print(f"❌ Audio playback error: {audio_error}")
+                                            print("TTS response generated but couldn't play audio")
+                                            
+                                            # Try alternative approach with higher volume
+                                            try:
+                                                if sys.platform == "darwin":  # macOS
+                                                    # Try with different voice and higher volume
+                                                    subprocess.run(["say", "-v", "Victoria", "-r", "150", response_text], check=True)
+                                                    print("✅ Audio response played with alternative voice!")
+                                            except Exception as alt_error:
+                                                print(f"❌ Alternative audio playback also failed: {alt_error}")
+                                                print("Please check your system audio settings and volume")
                                     else:
                                         print("🔇 No speech detected")
                                 else:
                                     print("🔇 No transcription result")
                                     
-                            except Exception as e2:
-                                print(f"❌ Alternative Deepgram approach also failed: {e2}")
-                                print("Deepgram API might be having issues. Check your API key and internet connection.")
+                            except Exception as e:
+                                print(f"❌ Deepgram error: {e}")
+                                print("This might be due to audio format or API issues.")
+                                print("Trying alternative approach...")
                                 
-                                # Fallback: simulate transcription for testing
-                                print("🔄 Using fallback mode - simulating transcription...")
-                                
-                                # Check if audio file has content (simple volume check)
-                                if len(audio_data) > 1000:  # Basic check for audio content
-                                    print("🎤 Audio detected - simulating transcription...")
+                                # Try alternative Deepgram call with simpler format
+                                try:
+                                    # Use the correct Deepgram v3 API call format (synchronous)
+                                    response = self.deepgram.listen.prerecorded.v("1").transcribe_file(
+                                        {"buffer": audio_data, "mimetype": "audio/wav"}
+                                    )
                                     
-                                    # Generate a simple response
-                                    response_text = "I heard you speaking! This is a fallback response since Deepgram is not working."
-                                    print(f"🤖 Responding: {response_text}")
+                                    if response and hasattr(response, 'results') and response.results:
+                                        transcript = response.results.channels[0].alternatives[0].transcript
+                                        if transcript.strip():
+                                            print(f"🎤 You said: {transcript}")
+                                            
+                                            # Generate response
+                                            response_text = f"I heard you say: {transcript}. That's interesting!"
+                                            print(f"🤖 Responding: {response_text}")
+                                            
+                                            # Speak the response
+                                            print("🔊 Speaking response...")
+                                            
+                                            # Use system command to play audio through speakers
+                                            try:
+                                                if sys.platform == "darwin":  # macOS
+                                                    # Use say with specific voice
+                                                    subprocess.run(["say", "-v", "Alex", response_text], check=True)
+                                                elif sys.platform.startswith("linux"):  # Linux
+                                                    subprocess.run(["espeak", response_text], check=True)
+                                                else:  # Windows
+                                                    subprocess.run(["powershell", "-Command", f"Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('{response_text}')"], check=True)
+                                                
+                                                print("✅ Audio response played!")
+                                                
+                                            except Exception as audio_error:
+                                                print(f"❌ Audio playback error: {audio_error}")
+                                                print("TTS response generated but couldn't play audio")
+                                                
+                                                # Try alternative approach with higher volume
+                                                try:
+                                                    if sys.platform == "darwin":  # macOS
+                                                        # Try with different voice and higher volume
+                                                        subprocess.run(["say", "-v", "Victoria", "-r", "150", response_text], check=True)
+                                                        print("✅ Audio response played with alternative voice!")
+                                                except Exception as alt_error:
+                                                    print(f"❌ Alternative audio playback also failed: {alt_error}")
+                                                    print("Please check your system audio settings and volume")
+                                    else:
+                                        print("🔇 No speech detected")
+                                        
+                                except Exception as e2:
+                                    print(f"❌ Alternative Deepgram approach also failed: {e2}")
+                                    print("Deepgram API might be having issues. Check your API key and internet connection.")
                                     
-                                    # Speak the response
-                                    print("🔊 Speaking response...")
-                                    await task.queue_frames([
-                                        TTSSpeakFrame(response_text),
-                                        EndFrame()
-                                    ])
-                                else:
-                                    print("🔇 No audio detected in recording")
+                                    # Fallback: simulate transcription for testing
+                                    print("🔄 Using fallback mode - simulating transcription...")
+                                    
+                                    # Check if audio file has content (simple volume check)
+                                    if len(audio_data) > 1000:  # Basic check for audio content
+                                        print("🎤 Audio detected - simulating transcription...")
+                                        
+                                        # Generate a simple response
+                                        response_text = "I heard you speaking! This is a fallback response since Deepgram is not working."
+                                        print(f"🤖 Responding: {response_text}")
+                                        
+                                        # Speak the response
+                                        print("🔊 Speaking response...")
+                                        
+                                        # Use system command to play audio through speakers
+                                        try:
+                                            if sys.platform == "darwin":  # macOS
+                                                # Use say with specific voice
+                                                subprocess.run(["say", "-v", "Alex", response_text], check=True)
+                                            elif sys.platform.startswith("linux"):  # Linux
+                                                subprocess.run(["espeak", response_text], check=True)
+                                            else:  # Windows
+                                                subprocess.run(["powershell", "-Command", f"Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('{response_text}')"], check=True)
+                                            
+                                            print("✅ Audio response played!")
+                                            
+                                        except Exception as audio_error:
+                                            print(f"❌ Audio playback error: {audio_error}")
+                                            print("TTS response generated but couldn't play audio")
+                                            
+                                            # Try alternative approach with higher volume
+                                            try:
+                                                if sys.platform == "darwin":  # macOS
+                                                    # Try with different voice and higher volume
+                                                    subprocess.run(["say", "-v", "Victoria", "-r", "150", response_text], check=True)
+                                                    print("✅ Audio response played with alternative voice!")
+                                            except Exception as alt_error:
+                                                print(f"❌ Alternative audio playback also failed: {alt_error}")
+                                                print("Please check your system audio settings and volume")
+                                    else:
+                                        print("🔇 No audio detected in recording")
                     
                     # Clean up temporary file
                     if os.path.exists(temp_filename):
