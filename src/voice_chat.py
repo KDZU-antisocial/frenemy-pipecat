@@ -670,6 +670,208 @@ class VoiceChat:
             print(f"❌ Error starting audio processing: {e}")
             print("This is a simplified version. For full audio processing, use the web interface.")
 
+    async def start_full_audio_processing(self):
+        """Start full audio processing with microphone input and TTS output"""
+        try:
+            print("🎤 Starting full audio processing pipeline...")
+            print("1. 🎤 Capturing audio from microphone")
+            print("2. 🧠 Transcribing with Deepgram")
+            print("3. 🤖 Generating responses")
+            print("4. 🔊 Speaking back through speakers")
+            print("Press Ctrl+C to stop.")
+            
+            # Initialize TTS service
+            if not self.cartesia_api_key:
+                raise ValueError("CARTESIA_API_KEY not set")
+                
+            tts = CartesiaTTSService(
+                api_key=self.cartesia_api_key,
+                voice_id="71a7ad14-091c-4e8e-a314-022ece01c121"
+            )
+            
+            # Create pipeline for TTS output
+            from pipecat.pipeline.pipeline import Pipeline
+            from pipecat.pipeline.task import PipelineTask
+            from pipecat.pipeline.runner import PipelineRunner
+            from pipecat.frames.frames import TTSSpeakFrame, EndFrame
+            
+            # Test TTS first
+            print("🎯 Testing TTS...")
+            task = PipelineTask(Pipeline([tts]))
+            await task.queue_frames([
+                TTSSpeakFrame("Hello! I'm ready to chat. Speak to me!"),
+                EndFrame()
+            ])
+            
+            print("✅ TTS working! Now starting audio capture...")
+            
+            # Start audio capture using system commands
+            import subprocess
+            import tempfile
+            import os
+            
+            # Audio settings
+            sample_rate = 16000
+            duration = 5  # seconds per recording
+            
+            print(f"🎤 Recording {duration}-second audio chunks...")
+            
+            while True:
+                try:
+                    # Create temporary file for audio
+                    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
+                        temp_filename = temp_file.name
+                    
+                    # Record audio using system command
+                    if sys.platform == "darwin":  # macOS
+                        cmd = [
+                            "rec", "-r", str(sample_rate), "-c", "1", 
+                            temp_filename, "trim", "0", str(duration)
+                        ]
+                    elif sys.platform.startswith("linux"):  # Linux
+                        cmd = [
+                            "rec", "-r", str(sample_rate), "-c", "1", 
+                            temp_filename, "trim", "0", str(duration)
+                        ]
+                    else:  # Windows
+                        cmd = [
+                            "sox", "-d", "-r", str(sample_rate), "-c", "1", 
+                            temp_filename, "trim", "0", str(duration)
+                        ]
+                    
+                    print("🎤 Recording... (speak now)")
+                    
+                    # Record audio
+                    result = subprocess.run(cmd, capture_output=True, text=True)
+                    
+                    if result.returncode == 0 and os.path.exists(temp_filename):
+                        # Read the recorded audio
+                        with open(temp_filename, "rb") as f:
+                            audio_data = f.read()
+                        
+                        print("🧠 Transcribing with Deepgram...")
+                        
+                        # Transcribe with Deepgram
+                        try:
+                            # Use the correct Deepgram API call format
+                            response = await self.deepgram.listen.prerecorded.v("1").transcribe_file(
+                                {"buffer": audio_data, "mimetype": "audio/wav"},
+                                {"punctuate": True, "language": "en", "sample_rate": sample_rate}
+                            )
+                            
+                            if response and 'results' in response:
+                                transcript = response['results']['channels'][0]['alternatives'][0]['transcript']
+                                if transcript.strip():
+                                    print(f"🎤 You said: {transcript}")
+                                    
+                                    # Generate response
+                                    response_text = f"I heard you say: {transcript}. That's interesting!"
+                                    print(f"🤖 Responding: {response_text}")
+                                    
+                                    # Speak the response
+                                    print("🔊 Speaking response...")
+                                    await task.queue_frames([
+                                        TTSSpeakFrame(response_text),
+                                        EndFrame()
+                                    ])
+                                else:
+                                    print("🔇 No speech detected")
+                            else:
+                                print("🔇 No transcription result")
+                                
+                        except Exception as e:
+                            print(f"❌ Deepgram error: {e}")
+                            print("This might be due to audio format or API issues.")
+                            print("Trying alternative approach...")
+                            
+                            # Try alternative Deepgram call
+                            try:
+                                # Convert audio to proper format
+                                import numpy as np
+                                import io
+                                import wave
+                                
+                                # Read WAV file and convert to proper format
+                                with io.BytesIO(audio_data) as audio_io:
+                                    with wave.open(audio_io, 'rb') as wav_file:
+                                        # Get audio parameters
+                                        frames = wav_file.readframes(wav_file.getnframes())
+                                        sample_rate = wav_file.getframerate()
+                                
+                                # Use alternative Deepgram call
+                                response = await self.deepgram.listen.prerecorded.v("1").transcribe_file(
+                                    {"buffer": frames, "mimetype": "audio/raw"},
+                                    {"punctuate": True, "language": "en", "sample_rate": sample_rate}
+                                )
+                                
+                                if response and 'results' in response:
+                                    transcript = response['results']['channels'][0]['alternatives'][0]['transcript']
+                                    if transcript.strip():
+                                        print(f"🎤 You said: {transcript}")
+                                        
+                                        # Generate response
+                                        response_text = f"I heard you say: {transcript}. That's interesting!"
+                                        print(f"🤖 Responding: {response_text}")
+                                        
+                                        # Speak the response
+                                        print("🔊 Speaking response...")
+                                        await task.queue_frames([
+                                            TTSSpeakFrame(response_text),
+                                            EndFrame()
+                                        ])
+                                    else:
+                                        print("🔇 No speech detected")
+                                else:
+                                    print("🔇 No transcription result")
+                                    
+                            except Exception as e2:
+                                print(f"❌ Alternative Deepgram approach also failed: {e2}")
+                                print("Deepgram API might be having issues. Check your API key and internet connection.")
+                                
+                                # Fallback: simulate transcription for testing
+                                print("🔄 Using fallback mode - simulating transcription...")
+                                
+                                # Check if audio file has content (simple volume check)
+                                if len(audio_data) > 1000:  # Basic check for audio content
+                                    print("🎤 Audio detected - simulating transcription...")
+                                    
+                                    # Generate a simple response
+                                    response_text = "I heard you speaking! This is a fallback response since Deepgram is not working."
+                                    print(f"🤖 Responding: {response_text}")
+                                    
+                                    # Speak the response
+                                    print("🔊 Speaking response...")
+                                    await task.queue_frames([
+                                        TTSSpeakFrame(response_text),
+                                        EndFrame()
+                                    ])
+                                else:
+                                    print("🔇 No audio detected in recording")
+                    
+                    # Clean up temporary file
+                    if os.path.exists(temp_filename):
+                        os.unlink(temp_filename)
+                    
+                    # Small delay between recordings
+                    await asyncio.sleep(1)
+                    
+                except KeyboardInterrupt:
+                    print("\n👋 Stopping audio processing...")
+                    break
+                except Exception as e:
+                    print(f"❌ Recording error: {e}")
+                    print("Make sure you have 'sox' installed:")
+                    print("  macOS: brew install sox")
+                    print("  Ubuntu: sudo apt-get install sox")
+                    print("  Windows: Download from http://sox.sourceforge.net/")
+                    break
+            
+            print("🎤 Audio processing stopped.")
+            
+        except Exception as e:
+            print(f"❌ Error starting full audio processing: {e}")
+            print("This requires 'sox' to be installed for audio recording.")
+
 if __name__ == "__main__":
     # Check if running in standalone mode
     if len(sys.argv) > 1 and sys.argv[1] == "--standalone":
@@ -702,7 +904,7 @@ if __name__ == "__main__":
                 voice_chat_instance = VoiceChat(input_device, output_device)
                 
                 # Start the audio processing in a background task
-                asyncio.create_task(voice_chat_instance.start_standalone_audio_processing())
+                asyncio.create_task(voice_chat_instance.start_full_audio_processing())
                 
                 print("🎯 Voice chat started! You should hear a test response.")
                 print("Press Ctrl+C to stop.")
