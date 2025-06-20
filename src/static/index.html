@@ -41,36 +41,169 @@
             max-height: 200px;
             overflow-y: auto;
         }
+        .device-info {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+        }
+        .device-info h3 {
+            margin-top: 0;
+            color: #495057;
+        }
+        select {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+        }
+        .current-device {
+            font-weight: bold;
+            color: #28a745;
+        }
     </style>
 </head>
 <body>
     <h1>Voice Chat Test Client</h1>
     <div id="status" class="disconnected">Disconnected</div>
+    
+    <div class="device-info">
+        <h3>🎤 Audio Devices</h3>
+        <label for="audioDevices">Select Microphone:</label>
+        <select id="audioDevices">
+            <option value="">Loading devices...</option>
+        </select>
+        <div id="currentDevice" class="current-device">No device selected</div>
+    </div>
+    
     <div class="controls">
         <button id="connect">Connect</button>
         <button id="disconnect" disabled>Disconnect</button>
+        <button id="refreshDevices">Refresh Devices</button>
     </div>
     <div id="log"></div>
 
     <script>
         let peerConnection;
+        let localStream;
         const connectButton = document.getElementById('connect');
         const disconnectButton = document.getElementById('disconnect');
+        const refreshButton = document.getElementById('refreshDevices');
         const statusDiv = document.getElementById('status');
         const logDiv = document.getElementById('log');
+        const audioDevicesSelect = document.getElementById('audioDevices');
+        const currentDeviceDiv = document.getElementById('currentDevice');
 
         function log(message) {
             logDiv.textContent += new Date().toISOString() + ': ' + message + '\n';
             logDiv.scrollTop = logDiv.scrollHeight;
         }
 
+        async function loadAudioDevices() {
+            try {
+                log('Loading audio devices...');
+                
+                // Check if mediaDevices is available
+                if (!navigator.mediaDevices) {
+                    throw new Error('mediaDevices API not available. Make sure you\'re using HTTPS or localhost.');
+                }
+                
+                log('mediaDevices API available, requesting permission...');
+                
+                // First request microphone permission
+                await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                log('Permission granted, enumerating devices...');
+                
+                // Now enumerate devices
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const audioInputs = devices.filter(device => device.kind === 'audioinput');
+                
+                audioDevicesSelect.innerHTML = '';
+                audioInputs.forEach(device => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.textContent = device.label || `Microphone ${device.deviceId.slice(0, 8)}...`;
+                    audioDevicesSelect.appendChild(option);
+                });
+                
+                if (audioInputs.length > 0) {
+                    currentDeviceDiv.textContent = `Available: ${audioInputs.length} microphone(s)`;
+                    log(`Found ${audioInputs.length} audio input devices`);
+                } else {
+                    currentDeviceDiv.textContent = 'No audio devices found';
+                    log('No audio input devices found');
+                }
+            } catch (error) {
+                log('Error loading devices: ' + error.message);
+                currentDeviceDiv.textContent = 'Error loading devices - check microphone permissions';
+                
+                // Add debugging information
+                log('Debug info:');
+                log('- navigator.mediaDevices: ' + (navigator.mediaDevices ? 'available' : 'not available'));
+                log('- Protocol: ' + window.location.protocol);
+                log('- Host: ' + window.location.host);
+                
+                // Add a button to request permission
+                const permissionButton = document.createElement('button');
+                permissionButton.textContent = 'Grant Microphone Permission';
+                permissionButton.onclick = async () => {
+                    try {
+                        if (!navigator.mediaDevices) {
+                            throw new Error('mediaDevices API not available');
+                        }
+                        await navigator.mediaDevices.getUserMedia({ audio: true });
+                        log('Microphone permission granted');
+                        loadAudioDevices(); // Reload devices
+                    } catch (permError) {
+                        log('Permission denied: ' + permError.message);
+                        if (permError.message.includes('mediaDevices API not available')) {
+                            log('Please make sure you\'re accessing this page via localhost or HTTPS');
+                        }
+                    }
+                };
+                currentDeviceDiv.appendChild(permissionButton);
+            }
+        }
+
+        async function getSelectedAudioStream() {
+            const selectedDeviceId = audioDevicesSelect.value;
+            const constraints = {
+                audio: selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : true
+            };
+            
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                const audioTrack = stream.getAudioTracks()[0];
+                if (audioTrack) {
+                    currentDeviceDiv.textContent = `Using: ${audioTrack.label || 'Unknown device'}`;
+                    log(`Selected microphone: ${audioTrack.label || 'Unknown device'}`);
+                }
+                return stream;
+            } catch (error) {
+                log('Error accessing microphone: ' + error.message);
+                throw error;
+            }
+        }
+
+        refreshButton.onclick = loadAudioDevices;
+
         connectButton.onclick = async () => {
             try {
                 log('Creating peer connection...');
                 
+                // Get user media with selected device
+                localStream = await getSelectedAudioStream();
+                
                 // Create WebRTC peer connection
                 peerConnection = new RTCPeerConnection({
                     iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                });
+
+                // Add local audio track
+                localStream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, localStream);
                 });
 
                 // Handle incoming audio
@@ -123,6 +256,10 @@
         };
 
         disconnectButton.onclick = () => {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                localStream = null;
+            }
             if (peerConnection) {
                 peerConnection.close();
                 peerConnection = null;
@@ -131,8 +268,12 @@
             statusDiv.className = 'disconnected';
             connectButton.disabled = false;
             disconnectButton.disabled = true;
+            currentDeviceDiv.textContent = 'No device selected';
             log('Disconnected');
         };
+
+        // Load devices when page loads
+        document.addEventListener('DOMContentLoaded', loadAudioDevices);
     </script>
 </body>
 </html> 
