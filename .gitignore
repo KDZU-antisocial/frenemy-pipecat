@@ -49,6 +49,7 @@ local_settings.py
 *.mp3
 *.ogg
 *.m4a
+*.aiff
 
 # Temporary files
 *.tmp

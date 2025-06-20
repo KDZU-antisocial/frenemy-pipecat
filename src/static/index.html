@@ -41,42 +41,311 @@
             max-height: 200px;
             overflow-y: auto;
         }
+        .device-info {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+        }
+        .device-info h3 {
+            margin-top: 0;
+            color: #495057;
+        }
+        .device-section {
+            margin: 15px 0;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+        select {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+        }
+        .current-device {
+            font-weight: bold;
+            color: #28a745;
+        }
+        .device-label {
+            font-weight: bold;
+            color: #495057;
+            margin-bottom: 5px;
+        }
     </style>
 </head>
 <body>
     <h1>Voice Chat Test Client</h1>
     <div id="status" class="disconnected">Disconnected</div>
+    
+    <div class="device-info">
+        <h3>🎤 Audio Devices</h3>
+        
+        <div class="device-section">
+            <div class="device-label">🎤 Microphone Input:</div>
+            <select id="audioInputDevices">
+                <option value="">Loading microphones...</option>
+            </select>
+            <div id="currentInputDevice" class="current-device">No microphone selected</div>
+        </div>
+        
+        <div class="device-section">
+            <div class="device-label">🔊 Audio Output:</div>
+            <select id="audioOutputDevices">
+                <option value="">Loading speakers...</option>
+            </select>
+            <div id="currentOutputDevice" class="current-device">No speaker selected</div>
+        </div>
+    </div>
+    
     <div class="controls">
         <button id="connect">Connect</button>
         <button id="disconnect" disabled>Disconnect</button>
+        <button id="refreshDevices">Refresh Devices</button>
+        <button id="testAudio">Test Audio</button>
     </div>
     <div id="log"></div>
 
     <script>
         let peerConnection;
+        let localStream;
+        let audioElement;
         const connectButton = document.getElementById('connect');
         const disconnectButton = document.getElementById('disconnect');
+        const refreshButton = document.getElementById('refreshDevices');
+        const testButton = document.getElementById('testAudio');
         const statusDiv = document.getElementById('status');
         const logDiv = document.getElementById('log');
+        const audioInputDevicesSelect = document.getElementById('audioInputDevices');
+        const audioOutputDevicesSelect = document.getElementById('audioOutputDevices');
+        const currentInputDeviceDiv = document.getElementById('currentInputDevice');
+        const currentOutputDeviceDiv = document.getElementById('currentOutputDevice');
 
         function log(message) {
             logDiv.textContent += new Date().toISOString() + ': ' + message + '\n';
             logDiv.scrollTop = logDiv.scrollHeight;
         }
 
+        async function loadAudioDevices() {
+            try {
+                log('Loading audio devices...');
+                
+                // Check if mediaDevices is available
+                if (!navigator.mediaDevices) {
+                    throw new Error('mediaDevices API not available. Make sure you\'re using HTTPS or localhost.');
+                }
+                
+                log('mediaDevices API available, requesting permission...');
+                
+                // First request microphone permission
+                await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                log('Permission granted, enumerating devices...');
+                
+                // Now enumerate devices
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const audioInputs = devices.filter(device => device.kind === 'audioinput');
+                const audioOutputs = devices.filter(device => device.kind === 'audiooutput');
+                
+                // Populate input devices
+                audioInputDevicesSelect.innerHTML = '';
+                audioInputs.forEach(device => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.textContent = device.label || `Microphone ${device.deviceId.slice(0, 8)}...`;
+                    audioInputDevicesSelect.appendChild(option);
+                });
+                
+                // Populate output devices
+                audioOutputDevicesSelect.innerHTML = '';
+                audioOutputs.forEach(device => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.textContent = device.label || `Speaker ${device.deviceId.slice(0, 8)}...`;
+                    audioOutputDevicesSelect.appendChild(option);
+                });
+                
+                if (audioInputs.length > 0) {
+                    currentInputDeviceDiv.textContent = `Available: ${audioInputs.length} microphone(s)`;
+                    log(`Found ${audioInputs.length} audio input devices`);
+                } else {
+                    currentInputDeviceDiv.textContent = 'No audio input devices found';
+                    log('No audio input devices found');
+                }
+                
+                if (audioOutputs.length > 0) {
+                    currentOutputDeviceDiv.textContent = `Available: ${audioOutputs.length} speaker(s)`;
+                    log(`Found ${audioOutputs.length} audio output devices`);
+                } else {
+                    currentOutputDeviceDiv.textContent = 'No audio output devices found';
+                    log('No audio output devices found');
+                }
+            } catch (error) {
+                log('Error loading devices: ' + error.message);
+                currentInputDeviceDiv.textContent = 'Error loading devices - check microphone permissions';
+                
+                // Add debugging information
+                log('Debug info:');
+                log('- navigator.mediaDevices: ' + (navigator.mediaDevices ? 'available' : 'not available'));
+                log('- Protocol: ' + window.location.protocol);
+                log('- Host: ' + window.location.host);
+                
+                // Add a button to request permission
+                const permissionButton = document.createElement('button');
+                permissionButton.textContent = 'Grant Microphone Permission';
+                permissionButton.onclick = async () => {
+                    try {
+                        if (!navigator.mediaDevices) {
+                            throw new Error('mediaDevices API not available');
+                        }
+                        await navigator.mediaDevices.getUserMedia({ audio: true });
+                        log('Microphone permission granted');
+                        loadAudioDevices(); // Reload devices
+                    } catch (permError) {
+                        log('Permission denied: ' + permError.message);
+                        if (permError.message.includes('mediaDevices API not available')) {
+                            log('Please make sure you\'re accessing this page via localhost or HTTPS');
+                        }
+                    }
+                };
+                currentInputDeviceDiv.appendChild(permissionButton);
+            }
+        }
+
+        async function getSelectedAudioStream() {
+            const selectedDeviceId = audioInputDevicesSelect.value;
+            const constraints = {
+                audio: selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : true
+            };
+            
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                const audioTrack = stream.getAudioTracks()[0];
+                if (audioTrack) {
+                    currentInputDeviceDiv.textContent = `Using: ${audioTrack.label || 'Unknown device'}`;
+                    log(`Selected microphone: ${audioTrack.label || 'Unknown device'}`);
+                }
+                return stream;
+            } catch (error) {
+                log('Error accessing microphone: ' + error.message);
+                throw error;
+            }
+        }
+
+        async function testAudioOutput() {
+            try {
+                const selectedOutputId = audioOutputDevicesSelect.value;
+                if (!selectedOutputId) {
+                    log('No output device selected for testing');
+                    log('Please select an audio output device first');
+                    return;
+                }
+
+                log('Testing audio output with device selection...');
+                log(`Selected device: ${audioOutputDevicesSelect.options[audioOutputDevicesSelect.selectedIndex].text}`);
+
+                // Create a test audio element
+                if (audioElement) {
+                    audioElement.pause();
+                    audioElement = null;
+                }
+
+                audioElement = new Audio();
+                
+                // Check if setSinkId is supported
+                if (audioElement.setSinkId) {
+                    log('setSinkId is supported in this browser');
+                    try {
+                        await audioElement.setSinkId(selectedOutputId);
+                        log(`✓ Audio output successfully set to: ${audioOutputDevicesSelect.options[audioOutputDevicesSelect.selectedIndex].text}`);
+                    } catch (error) {
+                        log('✗ Could not set output device: ' + error.message);
+                        log('This might be due to browser security restrictions');
+                        log('The audio will play through the default output device');
+                    }
+                } else {
+                    log('✗ setSinkId not supported in this browser');
+                    log('Audio will play through the default output device');
+                }
+
+                // Create a test tone using Web Audio API and connect it to the audio element
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                const mediaStreamDestination = audioContext.createMediaStreamDestination();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(mediaStreamDestination);
+                
+                oscillator.frequency.setValueAtTime(440, audioContext.currentTime); // A4 note
+                gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                
+                // Set the audio element source to the generated tone
+                audioElement.srcObject = mediaStreamDestination.stream;
+                audioElement.volume = 0.5;
+                
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 1);
+                
+                // Play the audio
+                try {
+                    await audioElement.play();
+                    log('✓ Playing test tone for 1 second...');
+                    log('If you hear the tone, the audio is working');
+                    log('Note: Output device selection may not work in all browsers');
+                } catch (playError) {
+                    log('✗ Error playing audio: ' + playError.message);
+                    log('Try clicking the page or granting audio permissions');
+                }
+                
+                setTimeout(() => {
+                    audioContext.close();
+                    if (audioElement) {
+                        audioElement.pause();
+                        audioElement = null;
+                    }
+                }, 1000);
+                
+            } catch (error) {
+                log('✗ Error testing audio: ' + error.message);
+            }
+        }
+
+        refreshButton.onclick = loadAudioDevices;
+        testButton.onclick = testAudioOutput;
+
         connectButton.onclick = async () => {
             try {
                 log('Creating peer connection...');
+                
+                // Get user media with selected device
+                localStream = await getSelectedAudioStream();
                 
                 // Create WebRTC peer connection
                 peerConnection = new RTCPeerConnection({
                     iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
                 });
 
+                // Add local audio track
+                localStream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, localStream);
+                });
+
                 // Handle incoming audio
                 peerConnection.ontrack = (event) => {
                     log('Received audio track');
                     const audio = new Audio();
+                    
+                    // Set output device if selected
+                    if (audioOutputDevicesSelect.value && audio.setSinkId) {
+                        audio.setSinkId(audioOutputDevicesSelect.value).then(() => {
+                            log(`Audio output set to: ${audioOutputDevicesSelect.options[audioOutputDevicesSelect.selectedIndex].text}`);
+                        }).catch(error => {
+                            log('Could not set output device: ' + error.message);
+                        });
+                    }
+                    
                     audio.srcObject = event.streams[0];
                     audio.play();
                 };
@@ -95,7 +364,9 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         sdp: peerConnection.localDescription.sdp,
-                        type: peerConnection.localDescription.type
+                        type: peerConnection.localDescription.type,
+                        input_device_id: audioInputDevicesSelect.value,
+                        output_device_id: audioOutputDevicesSelect.value
                     })
                 });
 
@@ -123,16 +394,28 @@
         };
 
         disconnectButton.onclick = () => {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                localStream = null;
+            }
             if (peerConnection) {
                 peerConnection.close();
                 peerConnection = null;
+            }
+            if (audioElement) {
+                audioElement.pause();
+                audioElement = null;
             }
             statusDiv.textContent = 'Disconnected';
             statusDiv.className = 'disconnected';
             connectButton.disabled = false;
             disconnectButton.disabled = true;
+            currentInputDeviceDiv.textContent = 'No device selected';
             log('Disconnected');
         };
+
+        // Load devices when page loads
+        document.addEventListener('DOMContentLoaded', loadAudioDevices);
     </script>
 </body>
 </html> 
