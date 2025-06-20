@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Voice Chat Test Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .controls {
+            margin: 20px 0;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        #status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .connected {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        #log {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Voice Chat Test Client</h1>
+    <div id="status" class="disconnected">Disconnected</div>
+    <div class="controls">
+        <button id="connect">Connect</button>
+        <button id="disconnect" disabled>Disconnect</button>
+    </div>
+    <div id="log"></div>
+
+    <script>
+        let peerConnection;
+        const connectButton = document.getElementById('connect');
+        const disconnectButton = document.getElementById('disconnect');
+        const statusDiv = document.getElementById('status');
+        const logDiv = document.getElementById('log');
+
+        function log(message) {
+            logDiv.textContent += new Date().toISOString() + ': ' + message + '\n';
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        connectButton.onclick = async () => {
+            try {
+                log('Creating peer connection...');
+                
+                // Create WebRTC peer connection
+                peerConnection = new RTCPeerConnection({
+                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                });
+
+                // Handle incoming audio
+                peerConnection.ontrack = (event) => {
+                    log('Received audio track');
+                    const audio = new Audio();
+                    audio.srcObject = event.streams[0];
+                    audio.play();
+                };
+
+                // Create and send offer
+                log('Creating offer...');
+                const offer = await peerConnection.createOffer({
+                    offerToReceiveAudio: true,
+                    offerToReceiveVideo: false
+                });
+                await peerConnection.setLocalDescription(offer);
+
+                log('Sending offer to server...');
+                const response = await fetch('/api/offer', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sdp: peerConnection.localDescription.sdp,
+                        type: peerConnection.localDescription.type
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const answer = await response.json();
+                log('Received answer from server');
+                
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+
+                // Update UI
+                statusDiv.textContent = 'Connected';
+                statusDiv.className = 'connected';
+                connectButton.disabled = true;
+                disconnectButton.disabled = false;
+                log('Connection established successfully');
+            } catch (error) {
+                console.error('Connection error:', error);
+                log('Connection failed: ' + error.message);
+                statusDiv.textContent = 'Connection failed: ' + error.message;
+                statusDiv.className = 'disconnected';
+            }
+        };
+
+        disconnectButton.onclick = () => {
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+            statusDiv.textContent = 'Disconnected';
+            statusDiv.className = 'disconnected';
+            connectButton.disabled = false;
+            disconnectButton.disabled = true;
+            log('Disconnected');
+        };
+    </script>
+</body>
+</html> 
