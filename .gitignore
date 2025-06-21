@@ -58,3 +58,4 @@ local_settings.py
 # Shell history
 .zsh_history
 .bash_history 
+.zcompdump
