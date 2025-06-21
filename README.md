@@ -28,29 +28,29 @@ A real-time voice chat application built with WebRTC, featuring speech-to-text t
 
 ## 📋 Prerequisites
 
-- Python 3.11 or higher
+- Python 3.11 or higher (tested with Python 3.13)
 - uv package manager
 - Microphone and speakers for testing
 - API keys for Deepgram and Cartesia
 
-### System Dependencies (Required for aiortc)
+### System Dependencies (Required for aiortc and av)
 
 **macOS:**
 ```bash
-brew install opus ffmpeg
+brew install opus ffmpeg pkg-config
 ```
 
 **Ubuntu/Debian:**
 ```bash
 sudo apt-get update
-sudo apt-get install libopus-dev ffmpeg
+sudo apt-get install libopus-dev ffmpeg pkg-config
 ```
 
 **CentOS/RHEL/Fedora:**
 ```bash
-sudo yum install opus-devel ffmpeg
+sudo yum install opus-devel ffmpeg pkg-config
 # or for newer versions:
-sudo dnf install opus-devel ffmpeg
+sudo dnf install opus-devel ffmpeg pkg-config
 ```
 
 **Windows:**
@@ -59,6 +59,7 @@ sudo dnf install opus-devel ffmpeg
   ```cmd
   choco install ffmpeg
   ```
+- Install [pkg-config](https://sourceforge.net/projects/pkgconfiglite/) for Windows
 
 ## 🚀 Quick Start
 
