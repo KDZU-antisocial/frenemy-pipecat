@@ -11,7 +11,7 @@ from pipecat.services.cartesia.tts import CartesiaTTSService
 from pipecat.transports.base_transport import BaseTransport, TransportParams
 from pipecat.transports.network.fastapi_websocket import FastAPIWebsocketParams
 from pipecat.transports.services.daily import DailyParams
-from aiortc import RTCPeerConnection, RTCSessionDescription, MediaStreamTrack
+from aiortc import RTCPeerConnection, RTCSessionDescription, MediaStreamTrack, RTCConfiguration, RTCIceServer
 from aiortc.contrib.media import MediaPlayer, MediaRelay
 from typing import Optional
 import subprocess
@@ -22,9 +22,12 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
-from scipy import signal
 import io
 import struct
+import wave
+from scipy.signal import butter, lfilter as scipy_lfilter
+from pydub import AudioSegment
+import tempfile
 
 # Load environment variables
 load_dotenv(override=True)
@@ -533,8 +536,11 @@ class VoiceChat:
 
     async def handle_offer(self, sdp, input_device_id=None, output_device_id=None):
         """Handle WebRTC offer with device routing"""
-        # Create peer connection with proper configuration
-        self.pc = RTCPeerConnection()
+        # Create peer connection with proper configuration for 48kHz audio
+        config = RTCConfiguration(
+            iceServers=[RTCIceServer(urls="stun:stun.l.google.com:19302")]
+        )
+        self.pc = RTCPeerConnection(configuration=config)
         
         # Store device preferences
         self.input_device_id = input_device_id
@@ -548,275 +554,165 @@ class VoiceChat:
         # Set up audio tracks with proper routing
         @self.pc.on("track")
         async def on_track(track):
+            print(f"🎵 Received audio track: {track.id}")
+            
+            # Save raw audio frames for debugging
+            raw_audio_frames = []
+            frame_count = 0
+            max_frames_to_save = 100  # Save first 100 frames
+            
             if track.kind == "audio":
-                print(f"🎵 Received audio track: {track.id}")
-                
-                # Create a media player for the output device if specified
-                if self.output_device_id:
-                    try:
-                        # For macOS, we can try to route audio to specific devices
-                        if sys.platform == "darwin":
-                            # Use system audio routing (this is a simplified approach)
-                            print(f"🔊 Attempting to route audio to device: {self.output_device_id}")
-                            # Note: Full device routing requires more complex audio pipeline setup
-                        else:
-                            print(f"🔊 Output device routing not fully supported on this platform")
-                    except Exception as e:
-                        print(f"⚠️ Could not route to specific output device: {e}")
+                print(f"🎤 Audio track received - will save raw frames for analysis")
                 
                 # Process incoming audio with Deepgram
                 async def process_audio():
-                    print("🧠 Starting audio processing pipeline...")
-                    
-                    # Buffer for accumulating audio
+                    print("🧠 Starting adaptive audio processing...")
+                    # Detect sample rate from first frame (force 48kHz)
+                    first_frame = await track.recv()
+                    first_audio = first_frame.to_ndarray().flatten()
+                    detected_sample_rate = 48000
+                    print(f"🎯 Forcing sample rate: {detected_sample_rate}Hz (Opus/WebRTC standard)")
+                    # Simple audio buffer - accumulate raw audio at 48kHz
                     audio_buffer = []
-                    buffer_duration = 3.0  # seconds (increased from 2.0)
-                    sample_rate = 16000
-                    samples_per_chunk = int(sample_rate * 0.1)  # 100ms chunks
+                    sample_rate = detected_sample_rate
+                    chunk_duration = 5.0  # seconds
                     frame_count = 0
-                    
-                    print(f"🔧 Audio processing config:")
-                    print(f"   Buffer duration: {buffer_duration}s")
-                    print(f"   Sample rate: {sample_rate}Hz")
-                    print(f"   Expected samples per buffer: {int(sample_rate * buffer_duration)}")
-                    print(f"   Energy threshold: 500")
-                    
-                    # Test Deepgram with a simple audio sample to verify it works
-                    print(f"🧪 Testing Deepgram with a simple audio sample...")
-                    try:
-                        # Create a simple test audio (silence with a small tone)
-                        test_samples = int(sample_rate * 1.0)  # 1 second
-                        test_audio = np.zeros(test_samples, dtype=np.int16)
-                        # Add a small tone at the end to make it non-silent
-                        test_audio[-1000:] = 1000
-                        
-                        # Create WAV file for test
-                        test_wav_buffer = io.BytesIO()
-                        test_wav_buffer.write(b'RIFF')
-                        test_wav_buffer.write(struct.pack('<I', 36 + len(test_audio.tobytes())))
-                        test_wav_buffer.write(b'WAVE')
-                        test_wav_buffer.write(b'fmt ')
-                        test_wav_buffer.write(struct.pack('<I', 16))
-                        test_wav_buffer.write(struct.pack('<H', 1))
-                        test_wav_buffer.write(struct.pack('<H', 1))
-                        test_wav_buffer.write(struct.pack('<I', sample_rate))
-                        test_wav_buffer.write(struct.pack('<I', sample_rate * 2))
-                        test_wav_buffer.write(struct.pack('<H', 2))
-                        test_wav_buffer.write(struct.pack('<H', 16))
-                        test_wav_buffer.write(b'data')
-                        test_wav_buffer.write(struct.pack('<I', len(test_audio.tobytes())))
-                        test_wav_buffer.write(test_audio.tobytes())
-                        test_wav_data = test_wav_buffer.getvalue()
-                        test_wav_buffer.close()
-                        
-                        test_response = self.deepgram.listen.prerecorded.v("1").transcribe_file(
-                            {"buffer": test_wav_data, "mimetype": "audio/wav"}
-                        )
-                        if test_response and hasattr(test_response, 'results') and test_response.results:
-                            test_transcript = test_response.results.channels[0].alternatives[0].transcript
-                            test_confidence = test_response.results.channels[0].alternatives[0].confidence
-                            print(f"🧪 Deepgram test result: '{test_transcript}' (confidence: {test_confidence:.3f})")
-                            if test_confidence > 0:
-                                print(f"✅ Deepgram is working correctly!")
-                            else:
-                                print(f"⚠️ Deepgram is not detecting speech in test audio")
-                        else:
-                            print(f"❌ Deepgram test failed: No response")
-                    except Exception as test_error:
-                        print(f"❌ Deepgram test error: {test_error}")
-                    
+                    debug_saved = False  # Only save first chunk for debugging
+                    # Add first frame to buffer
+                    audio_buffer.extend(first_audio)
+                    frame_count += 1
+                    # High-pass filter design (80 Hz cutoff)
+                    hp_cutoff = 80.0
+                    hp_order = 4
+                    b, a = butter(hp_order, hp_cutoff / (0.5 * sample_rate), btype='high', analog=False)
+                    print(f"🔧 High-pass filter: {hp_cutoff} Hz cutoff, order {hp_order}")
                     try:
                         while True:
                             try:
                                 frame = await track.recv()
                                 frame_count += 1
-                                
-                                # Debug: Show we're receiving frames
-                                if frame_count % 10 == 0:  # Every 10 frames
-                                    print(f"📡 Received frame #{frame_count}")
-                                
-                                # Process with Deepgram for transcription
-                                try:
-                                    # Convert frame to proper format for Deepgram
-                                    audio_array = frame.to_ndarray()
-                                    
-                                    # Debug: Show frame info
+                                # Save raw frames for debugging
+                                if len(raw_audio_frames) < max_frames_to_save:
+                                    raw_audio_frames.append(frame)
+                                    if len(raw_audio_frames) == max_frames_to_save:
+                                        print(f"🔍 Saved {len(raw_audio_frames)} raw audio frames for analysis")
+                                        # Save raw frames to file
+                                        await self.save_raw_frames(raw_audio_frames)
+                                # Convert frame to audio data
+                                audio_array = frame.to_ndarray()
+                                # Debug: Show frame info occasionally
+                                if frame_count % 10 == 0:
+                                    print(f"📡 Frame #{frame_count}: shape={audio_array.shape}, dtype={audio_array.dtype}, min={audio_array.min()}, max={audio_array.max()}")
+                                # Handle 2D audio array (channels, samples) -> flatten to 1D
+                                if len(audio_array) > 0:
+                                    if len(audio_array.shape) == 2:
+                                        audio_array = audio_array.flatten()
+                                    # Add directly to buffer (no resampling needed)
+                                    audio_buffer.extend(audio_array.flatten())
+                                    # Debug: Show direct usage info occasionally
                                     if frame_count % 10 == 0:
-                                        print(f"📊 Frame shape: {audio_array.shape}, dtype: {audio_array.dtype}")
-                                    
-                                    # WebRTC audio is typically 48kHz, we need to resample to 16kHz for Deepgram
-                                    # For now, let's use a simple approach - take every 3rd sample to downsample
-                                    if len(audio_array) > 0:
-                                        # Check immediate audio level
-                                        immediate_level = np.abs(audio_array).mean()
-                                        if frame_count % 5 == 0:  # Every 5 frames
-                                            print(f"🎤 Immediate audio level: {immediate_level:.4f}")
-                                        
-                                        # Downsample from 48kHz to 16kHz (take every 3rd sample)
-                                        downsampled = audio_array[::3]
-                                        
-                                        # Ensure proper format (16-bit PCM)
-                                        if downsampled.dtype != np.int16:
-                                            downsampled = (downsampled * 32767).astype(np.int16)
-                                        
-                                        # Add to buffer - add ALL samples from this frame
-                                        audio_buffer.extend(downsampled.flatten())
-                                        
-                                        # Debug: Show buffer status
-                                        if frame_count % 10 == 0:
-                                            buffer_seconds = len(audio_buffer) / sample_rate
-                                            print(f"📦 Buffer: {len(audio_buffer)} samples ({buffer_seconds:.1f}s)")
-                                        
-                                        # Check if we have enough audio for processing
-                                        if len(audio_buffer) >= sample_rate * buffer_duration:  # 3 seconds of audio
-                                            print(f"🎯 Buffer full! Processing {len(audio_buffer)} samples ({buffer_duration}s of audio)...")
+                                        print(f"✅ Direct {sample_rate}Hz: {len(audio_array)} samples")
+                                        print(f"✅ Audio levels: max={np.max(np.abs(audio_array.astype(np.float32) / 32767.0)):.4f}")
+                                    # Debug: Show buffer status occasionally
+                                    if frame_count % 50 == 0:
+                                        buffer_seconds = len(audio_buffer) / sample_rate
+                                        print(f"📦 Buffer: {len(audio_buffer)} samples ({buffer_seconds:.1f}s) - need {chunk_duration}s")
+                                    # Process when we have enough audio
+                                    if len(audio_buffer) >= sample_rate * chunk_duration:
+                                        print(f"🎯 Processing {len(audio_buffer)} samples ({chunk_duration}s)...")
+                                        # Get the audio chunk
+                                        audio_data = np.array(audio_buffer[:int(sample_rate * chunk_duration)], dtype=np.int16)
+                                        # --- High-pass filter ---
+                                        audio_data_hp = scipy_lfilter(b, a, audio_data.astype(np.float32))
+                                        if isinstance(audio_data_hp, tuple):
+                                            print('[WARN] lfilter returned a tuple, extracting first element. This suggests a shadowed lfilter.')
+                                            audio_data_hp = audio_data_hp[0]
+                                        print(f"[DEBUG] audio_data_hp type: {type(audio_data_hp)} shape: {getattr(audio_data_hp, 'shape', None)}")
+                                        audio_data_hp = audio_data_hp.astype(np.int16)
+                                        # Simple audio level check
+                                        audio_level = np.abs(audio_data_hp).mean()
+                                        print(f"📊 Audio level (HP filtered): {audio_level:.2f}")
+                                        # Only process if there's some audio activity
+                                        if audio_level > 5:  # Lowered threshold for longer chunks
+                                            print(f"🎤 Audio detected - sending to Deepgram...")
+                                            # Convert to bytes
+                                            audio_bytes = audio_data_hp.tobytes()
+                                            # Create MP3 file at 48kHz using pydub
+                                            print(f"🔧 Encoding audio as MP3...")
                                             
-                                            # Convert buffer to numpy array
-                                            audio_data = np.array(audio_buffer[:int(sample_rate * buffer_duration)], dtype=np.int16)
+                                            # Convert numpy array to AudioSegment
+                                            audio_segment = AudioSegment(
+                                                audio_data_hp.tobytes(),
+                                                frame_rate=sample_rate,
+                                                sample_width=2,  # 16-bit
+                                                channels=1  # Mono
+                                            )
                                             
-                                            # Debug: Check if audio contains actual sound
-                                            audio_rms = np.sqrt(np.mean(audio_data.astype(np.float32)**2))
-                                            audio_max = np.max(np.abs(audio_data))
-                                            zero_crossings = np.sum(np.diff(np.sign(audio_data)) != 0)
+                                            # Export as MP3 with good quality for speech
+                                            mp3_buffer = io.BytesIO()
+                                            audio_segment.export(
+                                                mp3_buffer,
+                                                format="mp3",
+                                                bitrate="128k",  # Good quality for speech
+                                                parameters=["-ar", str(sample_rate)]  # Ensure 48kHz sample rate
+                                            )
+                                            mp3_data = mp3_buffer.getvalue()
+                                            mp3_buffer.close()
                                             
-                                            print(f"🔍 Audio Analysis:")
-                                            print(f"   RMS level: {audio_rms:.2f}")
-                                            print(f"   Max amplitude: {audio_max}")
-                                            print(f"   Zero crossings: {zero_crossings}")
-                                            print(f"   Non-zero samples: {np.count_nonzero(audio_data)}/{len(audio_data)}")
+                                            # Debug: Save first chunk to file for analysis
+                                            if not debug_saved:
+                                                debug_filename = "debug_audio_chunk.mp3"
+                                                with open(debug_filename, "wb") as f:
+                                                    f.write(mp3_data)
+                                                print(f"🔍 Saved debug audio to: {debug_filename}")
+                                                print(f"🔍 Audio stats: min={audio_data_hp.min()}, max={audio_data_hp.max()}, mean={audio_data_hp.mean():.2f}")
+                                                debug_saved = True
                                             
-                                            # Check audio level
-                                            audio_level = np.abs(audio_data).mean()
-                                            print(f"📊 Audio level: {audio_level:.4f} (threshold: 0.01)")
+                                            print(f"📊 Sending {len(mp3_data)} bytes to Deepgram (48kHz mono MP3, HP filtered)")
+                                            print(f"📊 Compression ratio: {len(audio_bytes)} -> {len(mp3_data)} bytes ({len(mp3_data)/len(audio_bytes)*100:.1f}%)")
                                             
-                                            # Check for speech-like patterns (simple energy-based detection)
-                                            energy = np.sum(audio_data**2) / len(audio_data)
-                                            print(f"📊 Audio energy: {energy:.2f}")
-                                            
-                                            # Only process if energy is high enough (likely speech)
-                                            if energy > 500:  # Lowered threshold to catch more speech
-                                                print(f"🎤 High energy detected - likely speech!")
-                                                print(f"📊 Processing {len(audio_data)} samples ({len(audio_data)/sample_rate:.1f}s of audio)")
-                                                print(f"💡 Tip: Speak clearly and say complete words/sentences")
-                                                
-                                                # Convert to bytes
-                                                audio_bytes = audio_data.tobytes()
-                                                
-                                                # Create WAV file in memory for Deepgram
-                                                wav_buffer = io.BytesIO()
-                                                
-                                                # WAV file header (44 bytes)
-                                                wav_buffer.write(b'RIFF')
-                                                wav_buffer.write(struct.pack('<I', 36 + len(audio_bytes)))  # File size
-                                                wav_buffer.write(b'WAVE')
-                                                
-                                                # Format chunk
-                                                wav_buffer.write(b'fmt ')
-                                                wav_buffer.write(struct.pack('<I', 16))  # Chunk size
-                                                wav_buffer.write(struct.pack('<H', 1))   # Audio format (PCM)
-                                                wav_buffer.write(struct.pack('<H', 1))   # Channels (mono)
-                                                wav_buffer.write(struct.pack('<I', sample_rate))  # Sample rate
-                                                wav_buffer.write(struct.pack('<I', sample_rate * 2))  # Byte rate
-                                                wav_buffer.write(struct.pack('<H', 2))   # Block align
-                                                wav_buffer.write(struct.pack('<H', 16))  # Bits per sample
-                                                
-                                                # Data chunk
-                                                wav_buffer.write(b'data')
-                                                wav_buffer.write(struct.pack('<I', len(audio_bytes)))  # Data size
-                                                wav_buffer.write(audio_bytes)
-                                                
-                                                wav_data = wav_buffer.getvalue()
-                                                wav_buffer.close()
-                                                
-                                                print(f"📊 Sending {len(wav_data)} bytes of WAV audio to Deepgram")
-                                                
-                                                # Debug: Check WAV file structure
-                                                print(f"🔍 WAV file debug:")
-                                                print(f"   WAV data length: {len(wav_data)} bytes")
-                                                print(f"   WAV header: {wav_data[:12].hex()}")
-                                                print(f"   Expected header: 52494646 (RIFF)")
-                                                
-                                                # Use Deepgram for transcription with WAV format (working format)
+                                            # Send to Deepgram
+                                            try:
                                                 response = self.deepgram.listen.prerecorded.v("1").transcribe_file(
-                                                    {"buffer": wav_data, "mimetype": "audio/wav"}
+                                                    {"buffer": mp3_data, "mimetype": "audio/mpeg"}
                                                 )
-                                                
                                                 if response and hasattr(response, 'results') and response.results:
-                                                    transcript = response.results.channels[0].alternatives[0].transcript
-                                                    confidence = response.results.channels[0].alternatives[0].confidence
-                                                    print(f"🎤 Deepgram confidence: {confidence:.3f}")
-                                                    print(f"🎤 Raw transcript: '{transcript}'")
-                                                    
-                                                    if transcript.strip():
-                                                        print(f"🎤 Transcribed: {transcript}")
-                                                        
-                                                        # Generate response
-                                                        response_text = f"I heard you say: {transcript}. That's interesting!"
-                                                        print(f"🤖 Response: {response_text}")
-                                                        
-                                                        # Generate TTS audio
-                                                        try:
-                                                            # Create TTS audio using Cartesia
-                                                            if not self.cartesia_api_key:
-                                                                raise ValueError("CARTESIA_API_KEY not set")
-                                                                
-                                                            tts_service = CartesiaTTSService(
-                                                                api_key=self.cartesia_api_key,
-                                                                voice_id="71a7ad14-091c-4e8e-a314-022ece01c121"
-                                                            )
-                                                            
-                                                            # Generate speech
-                                                            print("🔊 Generating speech response...")
-                                                            # Note: This would need to be integrated with the WebRTC audio pipeline
-                                                            # For now, we'll use system TTS as a fallback
-                                                            
-                                                            # Use system TTS as fallback
-                                                            if sys.platform == "darwin":
-                                                                subprocess.run(["say", "-v", "Alex", response_text], check=True)
-                                                            elif sys.platform.startswith("linux"):
-                                                                subprocess.run(["espeak", response_text], check=True)
-                                                            else:
-                                                                subprocess.run(["powershell", "-Command", f"Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('{response_text}')"], check=True)
-                                                            
-                                                            print("✅ Speech response generated")
-                                                            
-                                                        except Exception as tts_error:
-                                                            print(f"❌ TTS error: {tts_error}")
-                                                            continue
+                                                    channels = response.results.channels
+                                                    if len(channels) > 0:
+                                                        transcript = channels[0].alternatives[0].transcript
+                                                        confidence = channels[0].alternatives[0].confidence
+                                                        if transcript.strip():
+                                                            print(f"🎤 Transcribed: {transcript}")
+                                                            print(f"🎤 Confidence: {confidence:.3f}")
+                                                            # Simple response
+                                                            response_text = f"I heard: {transcript}"
+                                                            print(f"🤖 Response: {response_text}")
+                                                            # Use system TTS
+                                                            try:
+                                                                if sys.platform == "darwin":
+                                                                    subprocess.run(["say", "-v", "Alex", response_text], check=True)
+                                                                elif sys.platform.startswith("linux"):
+                                                                    subprocess.run(["espeak", response_text], check=True)
+                                                                else:
+                                                                    subprocess.run(["powershell", "-Command", f"Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('{response_text}')"], check=True)
+                                                                print("✅ Speech response generated")
+                                                            except Exception as tts_error:
+                                                                print(f"❌ TTS error: {tts_error}")
+                                                        else:
+                                                            print("🔇 No speech detected")
                                                     else:
-                                                        print("🔇 No speech detected in audio")
-                                                        # Debug: Show what Deepgram actually returned
-                                                        print(f"🔍 Deepgram response details:")
-                                                        print(f"   Response type: {type(response)}")
-                                                        print(f"   Has results: {hasattr(response, 'results')}")
-                                                        if hasattr(response, 'results') and response.results:
-                                                            print(f"   Number of channels: {len(response.results.channels)}")
-                                                            print(f"   Number of alternatives: {len(response.results.channels[0].alternatives)}")
-                                                            print(f"   Alternative details: {response.results.channels[0].alternatives[0]}")
+                                                        print("🔇 No channels in response")
                                                 else:
-                                                    print("🔇 No transcription result from Deepgram")
-                                                    # Debug: Show what Deepgram actually returned
-                                                    print(f"🔍 Deepgram response details:")
-                                                    print(f"   Response type: {type(response)}")
-                                                    print(f"   Has results: {hasattr(response, 'results')}")
-                                                    if hasattr(response, 'results'):
-                                                        print(f"   Results: {response.results}")
-                                            else:
-                                                print(f"🔇 Low energy audio - likely background noise (energy: {energy:.2f})")
-                                            
-                                            # Clear buffer after processing
-                                            audio_buffer = audio_buffer[int(sample_rate * buffer_duration):]
-                                            print(f"🔄 Buffer cleared, remaining: {len(audio_buffer)} samples")
-                                            
-                                            # Add a small delay to prevent overwhelming the API
-                                            await asyncio.sleep(0.1)
-                                            
-                                except Exception as deepgram_error:
-                                    print(f"❌ Deepgram error: {deepgram_error}")
-                                    # Add more detailed error information
-                                    print(f"   Error type: {type(deepgram_error).__name__}")
-                                    continue
-                                    
+                                                    print("🔇 No response from Deepgram")
+                                            except Exception as deepgram_error:
+                                                print(f"❌ Deepgram error: {deepgram_error}")
+                                        else:
+                                            print(f"🔇 Low audio level ({audio_level:.2f}) - skipping")
+                                        # Clear buffer
+                                        audio_buffer = audio_buffer[int(sample_rate * chunk_duration):]
+                                        print(f"🔄 Buffer cleared, remaining: {len(audio_buffer)} samples")
+                                        # Small delay
+                                        await asyncio.sleep(0.1)
                             except Exception as e:
                                 print(f"❌ Audio processing error: {e}")
                                 break
@@ -825,7 +721,7 @@ class VoiceChat:
                 
                 # Start audio processing
                 asyncio.create_task(process_audio())
-
+                
         # Set the remote description
         print(f"📡 Processing SDP offer...")
         if isinstance(sdp, dict):
@@ -844,6 +740,37 @@ class VoiceChat:
             "sdp": self.pc.localDescription.sdp,
             "type": self.pc.localDescription.type
         }
+
+    async def save_raw_frames(self, frames):
+        """Save raw audio frames to a file for analysis"""
+        try:
+            print(f"💾 Saving {len(frames)} raw audio frames...")
+            
+            # Combine all frames
+            all_audio = []
+            for frame in frames:
+                audio_array = frame.to_ndarray()
+                all_audio.extend(audio_array.flatten())
+            
+            audio_data = np.array(all_audio, dtype=np.int16)
+            
+            # Detect sample rate from frame size
+            sample_rate = 48000 if len(audio_data) > 100000 else 16000
+            
+            print(f"📊 Raw audio stats: shape={audio_data.shape}, min={audio_data.min()}, max={audio_data.max()}, mean={audio_data.mean():.2f}")
+            print(f"📊 Detected sample rate: {sample_rate}Hz")
+            
+            # Save raw audio at detected sample rate
+            with wave.open("raw_audio_frames.wav", "wb") as wav_file:
+                wav_file.setnchannels(1)  # Mono
+                wav_file.setsampwidth(2)  # 16-bit
+                wav_file.setframerate(sample_rate)  # Detected sample rate
+                wav_file.writeframes(audio_data.tobytes())
+            
+            print(f"✅ Saved raw audio frames to: raw_audio_frames.wav ({sample_rate}Hz)")
+            
+        except Exception as e:
+            print(f"❌ Error saving raw frames: {e}")
 
     async def close(self):
         if self.pc:

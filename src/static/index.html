@@ -450,17 +450,85 @@
 
         async function getSelectedAudioStream() {
             const selectedDeviceId = audioInputDevicesSelect.value;
+            
+            // Modern audio constraints to force microphone selection
             const constraints = {
-                audio: selectedDeviceId ? { 
-                    deviceId: { exact: selectedDeviceId },
+                audio: {
+                    // Force microphone selection - be very explicit
                     echoCancellation: true,
                     noiseSuppression: true,
-                    autoGainControl: true
-                } : true
+                    autoGainControl: true,
+                    // Explicitly request microphone, not system audio
+                    googAutoGainControl: true,
+                    googNoiseSuppression: true,
+                    googHighpassFilter: true,
+                    googTypingNoiseDetection: true,
+                    googAudioMirroring: false,  // Prevent audio loopback
+                    googAudioMirroring2: false  // Prevent audio loopback
+                }
             };
             
+            // Add device selection if available
+            if (selectedDeviceId) {
+                constraints.audio.deviceId = { exact: selectedDeviceId };
+                log(`🎤 Requesting specific device: ${selectedDeviceId}`);
+            } else {
+                log('⚠️ No device selected - using default microphone');
+            }
+            
+            // Try to request 16kHz, but don't fail if not supported
             try {
+                constraints.audio.sampleRate = 16000;
+                log('🎯 Requesting 16kHz sample rate...');
+            } catch (e) {
+                log('⚠️ Could not set sample rate constraint');
+            }
+            
+            try {
+                log('Requesting audio with constraints: ' + JSON.stringify(constraints.audio, null, 2));
                 const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                
+                // Log the actual audio settings
+                const audioTrack = stream.getAudioTracks()[0];
+                if (audioTrack) {
+                    const settings = audioTrack.getSettings();
+                    log('Actual audio settings:');
+                    log('  Sample rate: ' + (settings.sampleRate || 'unknown'));
+                    log('  Channel count: ' + (settings.channelCount || 'unknown'));
+                    log('  Device: ' + (settings.deviceId || 'unknown'));
+                    log('  Label: ' + (audioTrack.label || 'unknown'));
+                    log('  Kind: ' + (audioTrack.kind || 'unknown'));
+                    
+                    // Check if we got the right device
+                    if (selectedDeviceId && settings.deviceId !== selectedDeviceId) {
+                        log('❌ WARNING: Got different device than requested!');
+                        log('  Requested: ' + selectedDeviceId);
+                        log('  Got: ' + settings.deviceId);
+                    } else {
+                        log('✅ Device selection successful');
+                    }
+                    
+                    const sampleRate = settings.sampleRate;
+                    if (sampleRate === 16000) {
+                        log('✅ SUCCESS: Got 16kHz audio!');
+                    } else if (sampleRate) {
+                        log(`⚠️ Got ${sampleRate}Hz instead of 16kHz`);
+                    } else {
+                        log('⚠️ Unknown sample rate');
+                    }
+                    
+                    // Check if this looks like microphone audio
+                    const label = audioTrack.label.toLowerCase();
+                    if (label.includes('mic') || label.includes('input') || label.includes('microphone')) {
+                        log('✅ Audio source appears to be microphone');
+                    } else if (label.includes('system') || label.includes('output') || label.includes('speaker')) {
+                        log('❌ WARNING: Audio source appears to be system audio, not microphone!');
+                    } else {
+                        log('⚠️ Unknown audio source type');
+                    }
+                    
+                    currentInputDeviceDiv.textContent = `Using: ${audioTrack.label || 'Unknown device'} (${sampleRate || 'unknown'}Hz)`;
+                }
                 
                 // Set up input audio analysis
                 inputAudioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -469,13 +537,12 @@
                 inputAnalyser.fftSize = 256;
                 inputSource.connect(inputAnalyser);
                 
-                const audioTrack = stream.getAudioTracks()[0];
-                if (audioTrack) {
-                    currentInputDeviceDiv.textContent = `Using: ${audioTrack.label || 'Unknown device'}`;
-                    log(`Selected microphone: ${audioTrack.label || 'Unknown device'}`);
-                }
+                // Start real-time audio analysis
+                log('Starting real-time audio analysis...');
+                analyzeAudioSource(inputAudioContext, inputAnalyser);
                 
                 return stream;
+                
             } catch (error) {
                 log('Error accessing microphone: ' + error.message);
                 throw error;
@@ -692,6 +759,52 @@
 
         // Load devices when page loads
         document.addEventListener('DOMContentLoaded', loadAudioDevices);
+
+        // Add audio analysis function
+        function analyzeAudioSource(audioContext, analyser) {
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            
+            function analyze() {
+                analyser.getByteFrequencyData(dataArray);
+                
+                // Calculate dominant frequency
+                let maxIndex = 0;
+                let maxValue = 0;
+                for (let i = 0; i < bufferLength; i++) {
+                    if (dataArray[i] > maxValue) {
+                        maxValue = dataArray[i];
+                        maxIndex = i;
+                    }
+                }
+                
+                // Convert to frequency (assuming 48kHz sample rate)
+                const dominantFreq = (maxIndex * 48000) / (2 * bufferLength);
+                
+                // Calculate average level
+                let sum = 0;
+                for (let i = 0; i < bufferLength; i++) {
+                    sum += dataArray[i];
+                }
+                const avgLevel = sum / bufferLength;
+                
+                // Log analysis every 2 seconds
+                if (Date.now() % 2000 < 100) {
+                    log(`Audio Analysis: Dominant freq: ${dominantFreq.toFixed(1)}Hz, Level: ${avgLevel.toFixed(1)}`);
+                    
+                    // Check for problematic audio
+                    if (dominantFreq < 100 && avgLevel > 50) {
+                        log('⚠️ WARNING: Low frequency dominant (possible 60Hz interference)');
+                    } else if (dominantFreq > 1000 && avgLevel > 30) {
+                        log('✅ Good: Speech-like frequencies detected');
+                    }
+                }
+                
+                requestAnimationFrame(analyze);
+            }
+            
+            analyze();
+        }
     </script>
 </body>
 </html> 
