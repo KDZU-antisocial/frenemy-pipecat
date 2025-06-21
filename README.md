@@ -33,6 +33,33 @@ A real-time voice chat application built with WebRTC, featuring speech-to-text t
 - Microphone and speakers for testing
 - API keys for Deepgram and Cartesia
 
+### System Dependencies (Required for aiortc)
+
+**macOS:**
+```bash
+brew install opus ffmpeg
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt-get update
+sudo apt-get install libopus-dev ffmpeg
+```
+
+**CentOS/RHEL/Fedora:**
+```bash
+sudo yum install opus-devel ffmpeg
+# or for newer versions:
+sudo dnf install opus-devel ffmpeg
+```
+
+**Windows:**
+- Install [FFmpeg](https://ffmpeg.org/download.html) and add it to your PATH
+- Install [Opus](https://opus-codec.org/downloads/) or use a package manager like Chocolatey:
+  ```cmd
+  choco install ffmpeg
+  ```
+
 ## 🚀 Quick Start
 
 ### 1. Clone the Repository
