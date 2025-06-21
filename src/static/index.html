@@ -1,116 +1,304 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Voice Chat Test Client</title>
+    <title>Voice Chat with VU Meters</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1000px;
             margin: 0 auto;
             padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
         }
-        .controls {
-            margin: 20px 0;
+        
+        .container {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
         }
-        button {
-            padding: 10px 20px;
-            margin: 5px;
-            font-size: 16px;
-            cursor: pointer;
+        
+        h1 {
+            text-align: center;
+            color: #4a5568;
+            margin-bottom: 30px;
+            font-size: 2.5em;
         }
-        #status {
-            margin: 10px 0;
-            padding: 10px;
-            border-radius: 4px;
-        }
-        .connected {
-            background-color: #d4edda;
-            color: #155724;
-        }
-        .disconnected {
-            background-color: #f8d7da;
-            color: #721c24;
-        }
-        #log {
-            margin-top: 20px;
-            padding: 10px;
-            background-color: #f8f9fa;
-            border-radius: 4px;
-            font-family: monospace;
-            white-space: pre-wrap;
-            max-height: 200px;
-            overflow-y: auto;
-        }
-        .device-info {
-            margin: 20px 0;
+        
+        .status {
+            text-align: center;
             padding: 15px;
-            background-color: #e9ecef;
-            border-radius: 4px;
+            border-radius: 10px;
+            margin: 20px 0;
+            font-weight: bold;
+            font-size: 1.1em;
         }
-        .device-info h3 {
-            margin-top: 0;
-            color: #495057;
+        
+        .connected {
+            background: linear-gradient(45deg, #48bb78, #38a169);
+            color: white;
         }
+        
+        .disconnected {
+            background: linear-gradient(45deg, #f56565, #e53e3e);
+            color: white;
+        }
+        
         .device-section {
-            margin: 15px 0;
-            padding: 10px;
-            background-color: #f8f9fa;
-            border-radius: 4px;
+            background: #f7fafc;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            border: 2px solid #e2e8f0;
         }
+        
+        .device-section h3 {
+            margin-top: 0;
+            color: #2d3748;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .vu-meter-container {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin: 15px 0;
+        }
+        
+        .vu-meter {
+            flex: 1;
+            height: 30px;
+            background: #e2e8f0;
+            border-radius: 15px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .vu-meter-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #48bb78, #ed8936, #f56565);
+            width: 0%;
+            transition: width 0.1s ease;
+            border-radius: 15px;
+        }
+        
+        .vu-meter-label {
+            min-width: 80px;
+            font-weight: bold;
+            color: #4a5568;
+        }
+        
+        .vu-meter-value {
+            min-width: 50px;
+            text-align: right;
+            font-family: monospace;
+            font-weight: bold;
+            color: #2d3748;
+        }
+        
         select {
             width: 100%;
-            padding: 8px;
-            margin: 5px 0;
-            border: 1px solid #ced4da;
-            border-radius: 4px;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            background: white;
+            margin: 10px 0;
         }
+        
+        select:focus {
+            outline: none;
+            border-color: #4299e1;
+            box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.1);
+        }
+        
+        .controls {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin: 30px 0;
+        }
+        
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            min-width: 120px;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(45deg, #4299e1, #3182ce);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(66, 153, 225, 0.4);
+        }
+        
+        .btn-secondary {
+            background: linear-gradient(45deg, #718096, #4a5568);
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(113, 128, 150, 0.4);
+        }
+        
+        .btn-success {
+            background: linear-gradient(45deg, #48bb78, #38a169);
+            color: white;
+        }
+        
+        .btn-success:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(72, 187, 120, 0.4);
+        }
+        
+        .btn-danger {
+            background: linear-gradient(45deg, #f56565, #e53e3e);
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(245, 101, 101, 0.4);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none !important;
+            box-shadow: none !important;
+        }
+        
+        .log {
+            background: #1a202c;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            margin-top: 20px;
+        }
+        
         .current-device {
             font-weight: bold;
-            color: #28a745;
+            color: #38a169;
+            margin-top: 10px;
+            padding: 8px;
+            background: #f0fff4;
+            border-radius: 5px;
+            border-left: 4px solid #48bb78;
         }
-        .device-label {
-            font-weight: bold;
-            color: #495057;
-            margin-bottom: 5px;
+        
+        .audio-visualizer {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            margin: 10px 0;
+        }
+        
+        .audio-bar {
+            width: 4px;
+            background: #4299e1;
+            border-radius: 2px;
+            transition: height 0.1s ease;
+        }
+        
+        .pulse {
+            animation: pulse 1s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
         }
     </style>
 </head>
 <body>
-    <h1>Voice Chat Test Client</h1>
-    <div id="status" class="disconnected">Disconnected</div>
-    
-    <div class="device-info">
-        <h3>🎤 Audio Devices</h3>
+    <div class="container">
+        <h1>🎤 Voice Chat with VU Meters</h1>
+        
+        <div id="status" class="status disconnected">Disconnected</div>
         
         <div class="device-section">
-            <div class="device-label">🎤 Microphone Input:</div>
+            <h3>🎤 Input Audio</h3>
             <select id="audioInputDevices">
                 <option value="">Loading microphones...</option>
             </select>
             <div id="currentInputDevice" class="current-device">No microphone selected</div>
+            
+            <div class="vu-meter-container">
+                <div class="vu-meter-label">Input Level:</div>
+                <div class="vu-meter">
+                    <div id="inputVuMeter" class="vu-meter-fill"></div>
+                </div>
+                <div id="inputVuValue" class="vu-meter-value">0 dB</div>
+            </div>
+            
+            <div class="audio-visualizer" id="inputVisualizer">
+                <!-- Audio bars will be generated here -->
+            </div>
         </div>
         
         <div class="device-section">
-            <div class="device-label">🔊 Audio Output:</div>
+            <h3>🔊 Output Audio</h3>
             <select id="audioOutputDevices">
                 <option value="">Loading speakers...</option>
             </select>
             <div id="currentOutputDevice" class="current-device">No speaker selected</div>
+            
+            <div class="vu-meter-container">
+                <div class="vu-meter-label">Output Level:</div>
+                <div class="vu-meter">
+                    <div id="outputVuMeter" class="vu-meter-fill"></div>
+                </div>
+                <div id="outputVuValue" class="vu-meter-value">0 dB</div>
+            </div>
+            
+            <div class="audio-visualizer" id="outputVisualizer">
+                <!-- Audio bars will be generated here -->
+            </div>
         </div>
+        
+        <div class="controls">
+            <button id="connect" class="btn-primary">Connect</button>
+            <button id="disconnect" class="btn-danger" disabled>Disconnect</button>
+            <button id="refreshDevices" class="btn-secondary">Refresh Devices</button>
+            <button id="testAudio" class="btn-success">Test Audio</button>
+        </div>
+        
+        <div id="log" class="log"></div>
     </div>
-    
-    <div class="controls">
-        <button id="connect">Connect</button>
-        <button id="disconnect" disabled>Disconnect</button>
-        <button id="refreshDevices">Refresh Devices</button>
-        <button id="testAudio">Test Audio</button>
-    </div>
-    <div id="log"></div>
 
     <script>
         let peerConnection;
         let localStream;
         let audioElement;
+        let inputAudioContext;
+        let outputAudioContext;
+        let inputAnalyser;
+        let outputAnalyser;
+        let inputDataArray;
+        let outputDataArray;
+        let animationId;
+        
+        // DOM elements
         const connectButton = document.getElementById('connect');
         const disconnectButton = document.getElementById('disconnect');
         const refreshButton = document.getElementById('refreshDevices');
@@ -121,35 +309,114 @@
         const audioOutputDevicesSelect = document.getElementById('audioOutputDevices');
         const currentInputDeviceDiv = document.getElementById('currentInputDevice');
         const currentOutputDeviceDiv = document.getElementById('currentOutputDevice');
+        const inputVuMeter = document.getElementById('inputVuMeter');
+        const outputVuMeter = document.getElementById('outputVuMeter');
+        const inputVuValue = document.getElementById('inputVuValue');
+        const outputVuValue = document.getElementById('outputVuValue');
+        const inputVisualizer = document.getElementById('inputVisualizer');
+        const outputVisualizer = document.getElementById('outputVisualizer');
 
         function log(message) {
-            logDiv.textContent += new Date().toISOString() + ': ' + message + '\n';
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.textContent += `[${timestamp}] ${message}\n`;
             logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function createAudioBars(container, count = 20) {
+            container.innerHTML = '';
+            for (let i = 0; i < count; i++) {
+                const bar = document.createElement('div');
+                bar.className = 'audio-bar';
+                bar.style.height = '10px';
+                container.appendChild(bar);
+            }
+        }
+
+        function updateVUMeter(analyser, vuMeter, vuValue, visualizer, isInput = true) {
+            if (!analyser) return;
+            
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            analyser.getByteFrequencyData(dataArray);
+            
+            // Calculate RMS value
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+                sum += dataArray[i] * dataArray[i];
+            }
+            const rms = Math.sqrt(sum / dataArray.length);
+            
+            // Convert to dB (approximate)
+            const db = rms > 0 ? 20 * Math.log10(rms / 255) : -60;
+            
+            // Update VU meter
+            const percentage = Math.max(0, Math.min(100, (db + 60) / 60 * 100));
+            vuMeter.style.width = percentage + '%';
+            
+            // Update value display
+            vuValue.textContent = `${db.toFixed(1)} dB`;
+            
+            // Update visualizer bars
+            const bars = visualizer.querySelectorAll('.audio-bar');
+            const barCount = bars.length;
+            const step = Math.floor(dataArray.length / barCount);
+            
+            for (let i = 0; i < barCount; i++) {
+                const index = i * step;
+                const value = dataArray[index] || 0;
+                const height = Math.max(5, (value / 255) * 50);
+                bars[i].style.height = height + 'px';
+                
+                // Color based on intensity
+                if (value > 200) {
+                    bars[i].style.background = '#f56565'; // Red
+                } else if (value > 150) {
+                    bars[i].style.background = '#ed8936'; // Orange
+                } else if (value > 100) {
+                    bars[i].style.background = '#48bb78'; // Green
+                } else {
+                    bars[i].style.background = '#4299e1'; // Blue
+                }
+            }
+        }
+
+        function startAudioVisualization() {
+            function animate() {
+                if (inputAnalyser) {
+                    updateVUMeter(inputAnalyser, inputVuMeter, inputVuValue, inputVisualizer, true);
+                }
+                if (outputAnalyser) {
+                    updateVUMeter(outputAnalyser, outputVuMeter, outputVuValue, outputVisualizer, false);
+                }
+                animationId = requestAnimationFrame(animate);
+            }
+            animate();
+        }
+
+        function stopAudioVisualization() {
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
         }
 
         async function loadAudioDevices() {
             try {
                 log('Loading audio devices...');
                 
-                // Check if mediaDevices is available
                 if (!navigator.mediaDevices) {
-                    throw new Error('mediaDevices API not available. Make sure you\'re using HTTPS or localhost.');
+                    throw new Error('mediaDevices API not available. Use HTTPS or localhost.');
                 }
                 
-                log('mediaDevices API available, requesting permission...');
-                
-                // First request microphone permission
+                // Request microphone permission first
                 await navigator.mediaDevices.getUserMedia({ audio: true });
                 
-                log('Permission granted, enumerating devices...');
-                
-                // Now enumerate devices
+                // Enumerate devices
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 const audioInputs = devices.filter(device => device.kind === 'audioinput');
                 const audioOutputs = devices.filter(device => device.kind === 'audiooutput');
                 
                 // Populate input devices
-                audioInputDevicesSelect.innerHTML = '';
+                audioInputDevicesSelect.innerHTML = '<option value="">Select microphone...</option>';
                 audioInputs.forEach(device => {
                     const option = document.createElement('option');
                     option.value = device.deviceId;
@@ -158,7 +425,7 @@
                 });
                 
                 // Populate output devices
-                audioOutputDevicesSelect.innerHTML = '';
+                audioOutputDevicesSelect.innerHTML = '<option value="">Select speaker...</option>';
                 audioOutputs.forEach(device => {
                     const option = document.createElement('option');
                     option.value = device.deviceId;
@@ -166,66 +433,48 @@
                     audioOutputDevicesSelect.appendChild(option);
                 });
                 
-                if (audioInputs.length > 0) {
-                    currentInputDeviceDiv.textContent = `Available: ${audioInputs.length} microphone(s)`;
-                    log(`Found ${audioInputs.length} audio input devices`);
-                } else {
-                    currentInputDeviceDiv.textContent = 'No audio input devices found';
-                    log('No audio input devices found');
-                }
+                currentInputDeviceDiv.textContent = `Available: ${audioInputs.length} microphone(s)`;
+                currentOutputDeviceDiv.textContent = `Available: ${audioOutputs.length} speaker(s)`;
                 
-                if (audioOutputs.length > 0) {
-                    currentOutputDeviceDiv.textContent = `Available: ${audioOutputs.length} speaker(s)`;
-                    log(`Found ${audioOutputs.length} audio output devices`);
-                } else {
-                    currentOutputDeviceDiv.textContent = 'No audio output devices found';
-                    log('No audio output devices found');
-                }
+                log(`Found ${audioInputs.length} input devices and ${audioOutputs.length} output devices`);
+                
+                // Create audio visualizers
+                createAudioBars(inputVisualizer);
+                createAudioBars(outputVisualizer);
+                
             } catch (error) {
                 log('Error loading devices: ' + error.message);
-                currentInputDeviceDiv.textContent = 'Error loading devices - check microphone permissions';
-                
-                // Add debugging information
-                log('Debug info:');
-                log('- navigator.mediaDevices: ' + (navigator.mediaDevices ? 'available' : 'not available'));
-                log('- Protocol: ' + window.location.protocol);
-                log('- Host: ' + window.location.host);
-                
-                // Add a button to request permission
-                const permissionButton = document.createElement('button');
-                permissionButton.textContent = 'Grant Microphone Permission';
-                permissionButton.onclick = async () => {
-                    try {
-                        if (!navigator.mediaDevices) {
-                            throw new Error('mediaDevices API not available');
-                        }
-                        await navigator.mediaDevices.getUserMedia({ audio: true });
-                        log('Microphone permission granted');
-                        loadAudioDevices(); // Reload devices
-                    } catch (permError) {
-                        log('Permission denied: ' + permError.message);
-                        if (permError.message.includes('mediaDevices API not available')) {
-                            log('Please make sure you\'re accessing this page via localhost or HTTPS');
-                        }
-                    }
-                };
-                currentInputDeviceDiv.appendChild(permissionButton);
+                currentInputDeviceDiv.textContent = 'Error loading devices - check permissions';
             }
         }
 
         async function getSelectedAudioStream() {
             const selectedDeviceId = audioInputDevicesSelect.value;
             const constraints = {
-                audio: selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : true
+                audio: selectedDeviceId ? { 
+                    deviceId: { exact: selectedDeviceId },
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                } : true
             };
             
             try {
                 const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                
+                // Set up input audio analysis
+                inputAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const inputSource = inputAudioContext.createMediaStreamSource(stream);
+                inputAnalyser = inputAudioContext.createAnalyser();
+                inputAnalyser.fftSize = 256;
+                inputSource.connect(inputAnalyser);
+                
                 const audioTrack = stream.getAudioTracks()[0];
                 if (audioTrack) {
                     currentInputDeviceDiv.textContent = `Using: ${audioTrack.label || 'Unknown device'}`;
                     log(`Selected microphone: ${audioTrack.label || 'Unknown device'}`);
                 }
+                
                 return stream;
             } catch (error) {
                 log('Error accessing microphone: ' + error.message);
@@ -237,81 +486,66 @@
             try {
                 const selectedOutputId = audioOutputDevicesSelect.value;
                 if (!selectedOutputId) {
-                    log('No output device selected for testing');
-                    log('Please select an audio output device first');
+                    log('Please select an output device first');
                     return;
                 }
 
-                log('Testing audio output with device selection...');
+                log('Testing audio output...');
                 log(`Selected device: ${audioOutputDevicesSelect.options[audioOutputDevicesSelect.selectedIndex].text}`);
 
-                // Create a test audio element
-                if (audioElement) {
-                    audioElement.pause();
-                    audioElement = null;
-                }
-
-                audioElement = new Audio();
-                
-                // Check if setSinkId is supported
-                if (audioElement.setSinkId) {
-                    log('setSinkId is supported in this browser');
-                    try {
-                        await audioElement.setSinkId(selectedOutputId);
-                        log(`✓ Audio output successfully set to: ${audioOutputDevicesSelect.options[audioOutputDevicesSelect.selectedIndex].text}`);
-                    } catch (error) {
-                        log('✗ Could not set output device: ' + error.message);
-                        log('This might be due to browser security restrictions');
-                        log('The audio will play through the default output device');
-                    }
-                } else {
-                    log('✗ setSinkId not supported in this browser');
-                    log('Audio will play through the default output device');
-                }
-
-                // Create a test tone using Web Audio API and connect it to the audio element
-                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const oscillator = audioContext.createOscillator();
-                const gainNode = audioContext.createGain();
-                const mediaStreamDestination = audioContext.createMediaStreamDestination();
+                // Create test audio context
+                const testContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = testContext.createOscillator();
+                const gainNode = testContext.createGain();
+                const mediaStreamDestination = testContext.createMediaStreamDestination();
                 
                 oscillator.connect(gainNode);
                 gainNode.connect(mediaStreamDestination);
                 
-                oscillator.frequency.setValueAtTime(440, audioContext.currentTime); // A4 note
-                gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                oscillator.frequency.setValueAtTime(440, testContext.currentTime);
+                gainNode.gain.setValueAtTime(0.3, testContext.currentTime);
                 
-                // Set the audio element source to the generated tone
-                audioElement.srcObject = mediaStreamDestination.stream;
-                audioElement.volume = 0.5;
+                // Create audio element and set output device
+                const testAudio = new Audio();
+                testAudio.srcObject = mediaStreamDestination.stream;
+                testAudio.volume = 0.5;
                 
-                oscillator.start(audioContext.currentTime);
-                oscillator.stop(audioContext.currentTime + 1);
-                
-                // Play the audio
-                try {
-                    await audioElement.play();
-                    log('✓ Playing test tone for 1 second...');
-                    log('If you hear the tone, the audio is working');
-                    log('Note: Output device selection may not work in all browsers');
-                } catch (playError) {
-                    log('✗ Error playing audio: ' + playError.message);
-                    log('Try clicking the page or granting audio permissions');
+                if (testAudio.setSinkId) {
+                    try {
+                        await testAudio.setSinkId(selectedOutputId);
+                        log('✓ Audio output device set successfully');
+                    } catch (error) {
+                        log('⚠ Could not set output device: ' + error.message);
+                    }
+                } else {
+                    log('⚠ setSinkId not supported - using default output');
                 }
                 
+                // Set up output audio analysis
+                outputAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const outputSource = outputAudioContext.createMediaStreamSource(mediaStreamDestination.stream);
+                outputAnalyser = outputAudioContext.createAnalyser();
+                outputAnalyser.fftSize = 256;
+                outputSource.connect(outputAnalyser);
+                
+                oscillator.start(testContext.currentTime);
+                oscillator.stop(testContext.currentTime + 2);
+                
+                await testAudio.play();
+                log('✓ Playing test tone for 2 seconds...');
+                
                 setTimeout(() => {
-                    audioContext.close();
-                    if (audioElement) {
-                        audioElement.pause();
-                        audioElement = null;
-                    }
-                }, 1000);
+                    testContext.close();
+                    outputAudioContext.close();
+                    testAudio.pause();
+                }, 2000);
                 
             } catch (error) {
                 log('✗ Error testing audio: ' + error.message);
             }
         }
 
+        // Event listeners
         refreshButton.onclick = loadAudioDevices;
         testButton.onclick = testAudioOutput;
 
@@ -334,7 +568,7 @@
 
                 // Handle incoming audio
                 peerConnection.ontrack = (event) => {
-                    log('Received audio track');
+                    log('Received audio track from server');
                     const audio = new Audio();
                     
                     // Set output device if selected
@@ -345,6 +579,13 @@
                             log('Could not set output device: ' + error.message);
                         });
                     }
+                    
+                    // Set up output audio analysis
+                    outputAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const outputSource = outputAudioContext.createMediaStreamSource(event.streams[0]);
+                    outputAnalyser = outputAudioContext.createAnalyser();
+                    outputAnalyser.fftSize = 256;
+                    outputSource.connect(outputAnalyser);
                     
                     audio.srcObject = event.streams[0];
                     audio.play();
@@ -379,6 +620,9 @@
                 
                 await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
 
+                // Start audio visualization
+                startAudioVisualization();
+
                 // Update UI
                 statusDiv.textContent = 'Connected';
                 statusDiv.className = 'connected';
@@ -394,23 +638,55 @@
         };
 
         disconnectButton.onclick = () => {
+            // Stop audio visualization
+            stopAudioVisualization();
+            
+            // Close audio contexts
+            if (inputAudioContext) {
+                inputAudioContext.close();
+                inputAudioContext = null;
+            }
+            if (outputAudioContext) {
+                outputAudioContext.close();
+                outputAudioContext = null;
+            }
+            
+            // Stop streams
             if (localStream) {
                 localStream.getTracks().forEach(track => track.stop());
                 localStream = null;
             }
+            
+            // Close peer connection
             if (peerConnection) {
                 peerConnection.close();
                 peerConnection = null;
             }
+            
+            // Reset audio element
             if (audioElement) {
                 audioElement.pause();
                 audioElement = null;
             }
+            
+            // Reset analyzers
+            inputAnalyser = null;
+            outputAnalyser = null;
+            
+            // Update UI
             statusDiv.textContent = 'Disconnected';
             statusDiv.className = 'disconnected';
             connectButton.disabled = false;
             disconnectButton.disabled = true;
             currentInputDeviceDiv.textContent = 'No device selected';
+            currentOutputDeviceDiv.textContent = 'No device selected';
+            
+            // Reset VU meters
+            inputVuMeter.style.width = '0%';
+            outputVuMeter.style.width = '0%';
+            inputVuValue.textContent = '0 dB';
+            outputVuValue.textContent = '0 dB';
+            
             log('Disconnected');
         };
 

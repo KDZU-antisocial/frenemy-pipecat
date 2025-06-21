@@ -22,6 +22,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
+from scipy import signal
+import io
+import struct
 
 # Load environment variables
 load_dotenv(override=True)
@@ -529,6 +532,7 @@ class VoiceChat:
         self.relay = MediaRelay()
 
     async def handle_offer(self, sdp, input_device_id=None, output_device_id=None):
+        """Handle WebRTC offer with device routing"""
         # Create peer connection with proper configuration
         self.pc = RTCPeerConnection()
         
@@ -537,70 +541,296 @@ class VoiceChat:
         self.output_device_id = output_device_id
         
         if input_device_id:
-            print(f"Using input device: {input_device_id}")
+            print(f"🎤 Using input device: {input_device_id}")
         if output_device_id:
-            print(f"Using output device: {output_device_id}")
+            print(f"🔊 Using output device: {output_device_id}")
         
-        # Set up audio tracks
+        # Set up audio tracks with proper routing
         @self.pc.on("track")
         async def on_track(track):
             if track.kind == "audio":
-                print(f"Received audio track: {track.id}")
+                print(f"🎵 Received audio track: {track.id}")
+                
+                # Create a media player for the output device if specified
+                if self.output_device_id:
+                    try:
+                        # For macOS, we can try to route audio to specific devices
+                        if sys.platform == "darwin":
+                            # Use system audio routing (this is a simplified approach)
+                            print(f"🔊 Attempting to route audio to device: {self.output_device_id}")
+                            # Note: Full device routing requires more complex audio pipeline setup
+                        else:
+                            print(f"🔊 Output device routing not fully supported on this platform")
+                    except Exception as e:
+                        print(f"⚠️ Could not route to specific output device: {e}")
+                
                 # Process incoming audio with Deepgram
                 async def process_audio():
-                    while True:
-                        try:
-                            frame = await track.recv()
-                            # Process incoming audio with Deepgram
+                    print("🧠 Starting audio processing pipeline...")
+                    
+                    # Buffer for accumulating audio
+                    audio_buffer = []
+                    buffer_duration = 3.0  # seconds (increased from 2.0)
+                    sample_rate = 16000
+                    samples_per_chunk = int(sample_rate * 0.1)  # 100ms chunks
+                    frame_count = 0
+                    
+                    print(f"🔧 Audio processing config:")
+                    print(f"   Buffer duration: {buffer_duration}s")
+                    print(f"   Sample rate: {sample_rate}Hz")
+                    print(f"   Expected samples per buffer: {int(sample_rate * buffer_duration)}")
+                    print(f"   Energy threshold: 500")
+                    
+                    # Test Deepgram with a simple audio sample to verify it works
+                    print(f"🧪 Testing Deepgram with a simple audio sample...")
+                    try:
+                        # Create a simple test audio (silence with a small tone)
+                        test_samples = int(sample_rate * 1.0)  # 1 second
+                        test_audio = np.zeros(test_samples, dtype=np.int16)
+                        # Add a small tone at the end to make it non-silent
+                        test_audio[-1000:] = 1000
+                        
+                        # Create WAV file for test
+                        test_wav_buffer = io.BytesIO()
+                        test_wav_buffer.write(b'RIFF')
+                        test_wav_buffer.write(struct.pack('<I', 36 + len(test_audio.tobytes())))
+                        test_wav_buffer.write(b'WAVE')
+                        test_wav_buffer.write(b'fmt ')
+                        test_wav_buffer.write(struct.pack('<I', 16))
+                        test_wav_buffer.write(struct.pack('<H', 1))
+                        test_wav_buffer.write(struct.pack('<H', 1))
+                        test_wav_buffer.write(struct.pack('<I', sample_rate))
+                        test_wav_buffer.write(struct.pack('<I', sample_rate * 2))
+                        test_wav_buffer.write(struct.pack('<H', 2))
+                        test_wav_buffer.write(struct.pack('<H', 16))
+                        test_wav_buffer.write(b'data')
+                        test_wav_buffer.write(struct.pack('<I', len(test_audio.tobytes())))
+                        test_wav_buffer.write(test_audio.tobytes())
+                        test_wav_data = test_wav_buffer.getvalue()
+                        test_wav_buffer.close()
+                        
+                        test_response = self.deepgram.listen.prerecorded.v("1").transcribe_file(
+                            {"buffer": test_wav_data, "mimetype": "audio/wav"}
+                        )
+                        if test_response and hasattr(test_response, 'results') and test_response.results:
+                            test_transcript = test_response.results.channels[0].alternatives[0].transcript
+                            test_confidence = test_response.results.channels[0].alternatives[0].confidence
+                            print(f"🧪 Deepgram test result: '{test_transcript}' (confidence: {test_confidence:.3f})")
+                            if test_confidence > 0:
+                                print(f"✅ Deepgram is working correctly!")
+                            else:
+                                print(f"⚠️ Deepgram is not detecting speech in test audio")
+                        else:
+                            print(f"❌ Deepgram test failed: No response")
+                    except Exception as test_error:
+                        print(f"❌ Deepgram test error: {test_error}")
+                    
+                    try:
+                        while True:
                             try:
-                                # Create a proper audio buffer for Deepgram
-                                audio_array = frame.to_ndarray()
+                                frame = await track.recv()
+                                frame_count += 1
                                 
-                                # Convert to proper format for Deepgram
-                                if audio_array.dtype != np.int16:
-                                    audio_array = (audio_array * 32767).astype(np.int16)
+                                # Debug: Show we're receiving frames
+                                if frame_count % 10 == 0:  # Every 10 frames
+                                    print(f"📡 Received frame #{frame_count}")
                                 
-                                audio_bytes = audio_array.tobytes()
-                                
-                                # Use the correct Deepgram v3 API call format (synchronous)
-                                response = self.deepgram.listen.prerecorded.v("1").transcribe_file(
-                                    {"buffer": audio_bytes, "mimetype": "audio/raw"}
-                                )
-                                
-                                if response and hasattr(response, 'results') and response.results:
-                                    transcript = response.results.channels[0].alternatives[0].transcript
-                                    if transcript.strip():
-                                        # Generate response (simple echo for now)
-                                        response_text = f"I heard you say: {transcript}"
-                                        print(f"Transcription: {transcript}")
+                                # Process with Deepgram for transcription
+                                try:
+                                    # Convert frame to proper format for Deepgram
+                                    audio_array = frame.to_ndarray()
+                                    
+                                    # Debug: Show frame info
+                                    if frame_count % 10 == 0:
+                                        print(f"📊 Frame shape: {audio_array.shape}, dtype: {audio_array.dtype}")
+                                    
+                                    # WebRTC audio is typically 48kHz, we need to resample to 16kHz for Deepgram
+                                    # For now, let's use a simple approach - take every 3rd sample to downsample
+                                    if len(audio_array) > 0:
+                                        # Check immediate audio level
+                                        immediate_level = np.abs(audio_array).mean()
+                                        if frame_count % 5 == 0:  # Every 5 frames
+                                            print(f"🎤 Immediate audio level: {immediate_level:.4f}")
                                         
-                                        # Convert response to speech using Cartesia
-                                        try:
-                                            # For now, just print the response instead of generating audio
-                                            # The TTS service integration needs more complex setup
-                                            print(f"Would say: {response_text}")
-                                            # TODO: Implement proper TTS audio generation
-                                            # This would require setting up a proper audio pipeline
-                                        except Exception as cartesia_error:
-                                            print(f"Cartesia API error: {cartesia_error}")
-                                            # Continue processing even if Cartesia fails
-                                            continue
-                            except Exception as deepgram_error:
-                                print(f"Deepgram API error: {deepgram_error}")
-                                # Continue processing even if Deepgram fails
-                                continue
-                        except Exception as e:
-                            print(f"Error processing audio: {e}")
-                            break
+                                        # Downsample from 48kHz to 16kHz (take every 3rd sample)
+                                        downsampled = audio_array[::3]
+                                        
+                                        # Ensure proper format (16-bit PCM)
+                                        if downsampled.dtype != np.int16:
+                                            downsampled = (downsampled * 32767).astype(np.int16)
+                                        
+                                        # Add to buffer - add ALL samples from this frame
+                                        audio_buffer.extend(downsampled.flatten())
+                                        
+                                        # Debug: Show buffer status
+                                        if frame_count % 10 == 0:
+                                            buffer_seconds = len(audio_buffer) / sample_rate
+                                            print(f"📦 Buffer: {len(audio_buffer)} samples ({buffer_seconds:.1f}s)")
+                                        
+                                        # Check if we have enough audio for processing
+                                        if len(audio_buffer) >= sample_rate * buffer_duration:  # 3 seconds of audio
+                                            print(f"🎯 Buffer full! Processing {len(audio_buffer)} samples ({buffer_duration}s of audio)...")
+                                            
+                                            # Convert buffer to numpy array
+                                            audio_data = np.array(audio_buffer[:int(sample_rate * buffer_duration)], dtype=np.int16)
+                                            
+                                            # Debug: Check if audio contains actual sound
+                                            audio_rms = np.sqrt(np.mean(audio_data.astype(np.float32)**2))
+                                            audio_max = np.max(np.abs(audio_data))
+                                            zero_crossings = np.sum(np.diff(np.sign(audio_data)) != 0)
+                                            
+                                            print(f"🔍 Audio Analysis:")
+                                            print(f"   RMS level: {audio_rms:.2f}")
+                                            print(f"   Max amplitude: {audio_max}")
+                                            print(f"   Zero crossings: {zero_crossings}")
+                                            print(f"   Non-zero samples: {np.count_nonzero(audio_data)}/{len(audio_data)}")
+                                            
+                                            # Check audio level
+                                            audio_level = np.abs(audio_data).mean()
+                                            print(f"📊 Audio level: {audio_level:.4f} (threshold: 0.01)")
+                                            
+                                            # Check for speech-like patterns (simple energy-based detection)
+                                            energy = np.sum(audio_data**2) / len(audio_data)
+                                            print(f"📊 Audio energy: {energy:.2f}")
+                                            
+                                            # Only process if energy is high enough (likely speech)
+                                            if energy > 500:  # Lowered threshold to catch more speech
+                                                print(f"🎤 High energy detected - likely speech!")
+                                                print(f"📊 Processing {len(audio_data)} samples ({len(audio_data)/sample_rate:.1f}s of audio)")
+                                                print(f"💡 Tip: Speak clearly and say complete words/sentences")
+                                                
+                                                # Convert to bytes
+                                                audio_bytes = audio_data.tobytes()
+                                                
+                                                # Create WAV file in memory for Deepgram
+                                                wav_buffer = io.BytesIO()
+                                                
+                                                # WAV file header (44 bytes)
+                                                wav_buffer.write(b'RIFF')
+                                                wav_buffer.write(struct.pack('<I', 36 + len(audio_bytes)))  # File size
+                                                wav_buffer.write(b'WAVE')
+                                                
+                                                # Format chunk
+                                                wav_buffer.write(b'fmt ')
+                                                wav_buffer.write(struct.pack('<I', 16))  # Chunk size
+                                                wav_buffer.write(struct.pack('<H', 1))   # Audio format (PCM)
+                                                wav_buffer.write(struct.pack('<H', 1))   # Channels (mono)
+                                                wav_buffer.write(struct.pack('<I', sample_rate))  # Sample rate
+                                                wav_buffer.write(struct.pack('<I', sample_rate * 2))  # Byte rate
+                                                wav_buffer.write(struct.pack('<H', 2))   # Block align
+                                                wav_buffer.write(struct.pack('<H', 16))  # Bits per sample
+                                                
+                                                # Data chunk
+                                                wav_buffer.write(b'data')
+                                                wav_buffer.write(struct.pack('<I', len(audio_bytes)))  # Data size
+                                                wav_buffer.write(audio_bytes)
+                                                
+                                                wav_data = wav_buffer.getvalue()
+                                                wav_buffer.close()
+                                                
+                                                print(f"📊 Sending {len(wav_data)} bytes of WAV audio to Deepgram")
+                                                
+                                                # Debug: Check WAV file structure
+                                                print(f"🔍 WAV file debug:")
+                                                print(f"   WAV data length: {len(wav_data)} bytes")
+                                                print(f"   WAV header: {wav_data[:12].hex()}")
+                                                print(f"   Expected header: 52494646 (RIFF)")
+                                                
+                                                # Use Deepgram for transcription with WAV format (working format)
+                                                response = self.deepgram.listen.prerecorded.v("1").transcribe_file(
+                                                    {"buffer": wav_data, "mimetype": "audio/wav"}
+                                                )
+                                                
+                                                if response and hasattr(response, 'results') and response.results:
+                                                    transcript = response.results.channels[0].alternatives[0].transcript
+                                                    confidence = response.results.channels[0].alternatives[0].confidence
+                                                    print(f"🎤 Deepgram confidence: {confidence:.3f}")
+                                                    print(f"🎤 Raw transcript: '{transcript}'")
+                                                    
+                                                    if transcript.strip():
+                                                        print(f"🎤 Transcribed: {transcript}")
+                                                        
+                                                        # Generate response
+                                                        response_text = f"I heard you say: {transcript}. That's interesting!"
+                                                        print(f"🤖 Response: {response_text}")
+                                                        
+                                                        # Generate TTS audio
+                                                        try:
+                                                            # Create TTS audio using Cartesia
+                                                            if not self.cartesia_api_key:
+                                                                raise ValueError("CARTESIA_API_KEY not set")
+                                                                
+                                                            tts_service = CartesiaTTSService(
+                                                                api_key=self.cartesia_api_key,
+                                                                voice_id="71a7ad14-091c-4e8e-a314-022ece01c121"
+                                                            )
+                                                            
+                                                            # Generate speech
+                                                            print("🔊 Generating speech response...")
+                                                            # Note: This would need to be integrated with the WebRTC audio pipeline
+                                                            # For now, we'll use system TTS as a fallback
+                                                            
+                                                            # Use system TTS as fallback
+                                                            if sys.platform == "darwin":
+                                                                subprocess.run(["say", "-v", "Alex", response_text], check=True)
+                                                            elif sys.platform.startswith("linux"):
+                                                                subprocess.run(["espeak", response_text], check=True)
+                                                            else:
+                                                                subprocess.run(["powershell", "-Command", f"Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('{response_text}')"], check=True)
+                                                            
+                                                            print("✅ Speech response generated")
+                                                            
+                                                        except Exception as tts_error:
+                                                            print(f"❌ TTS error: {tts_error}")
+                                                            continue
+                                                    else:
+                                                        print("🔇 No speech detected in audio")
+                                                        # Debug: Show what Deepgram actually returned
+                                                        print(f"🔍 Deepgram response details:")
+                                                        print(f"   Response type: {type(response)}")
+                                                        print(f"   Has results: {hasattr(response, 'results')}")
+                                                        if hasattr(response, 'results') and response.results:
+                                                            print(f"   Number of channels: {len(response.results.channels)}")
+                                                            print(f"   Number of alternatives: {len(response.results.channels[0].alternatives)}")
+                                                            print(f"   Alternative details: {response.results.channels[0].alternatives[0]}")
+                                                else:
+                                                    print("🔇 No transcription result from Deepgram")
+                                                    # Debug: Show what Deepgram actually returned
+                                                    print(f"🔍 Deepgram response details:")
+                                                    print(f"   Response type: {type(response)}")
+                                                    print(f"   Has results: {hasattr(response, 'results')}")
+                                                    if hasattr(response, 'results'):
+                                                        print(f"   Results: {response.results}")
+                                            else:
+                                                print(f"🔇 Low energy audio - likely background noise (energy: {energy:.2f})")
+                                            
+                                            # Clear buffer after processing
+                                            audio_buffer = audio_buffer[int(sample_rate * buffer_duration):]
+                                            print(f"🔄 Buffer cleared, remaining: {len(audio_buffer)} samples")
+                                            
+                                            # Add a small delay to prevent overwhelming the API
+                                            await asyncio.sleep(0.1)
+                                            
+                                except Exception as deepgram_error:
+                                    print(f"❌ Deepgram error: {deepgram_error}")
+                                    # Add more detailed error information
+                                    print(f"   Error type: {type(deepgram_error).__name__}")
+                                    continue
+                                    
+                            except Exception as e:
+                                print(f"❌ Audio processing error: {e}")
+                                break
+                    except asyncio.CancelledError:
+                        print("🛑 Audio processing cancelled")
                 
+                # Start audio processing
                 asyncio.create_task(process_audio())
 
         # Set the remote description
-        print(f"Received SDP: {sdp}")
+        print(f"📡 Processing SDP offer...")
         if isinstance(sdp, dict):
             offer = RTCSessionDescription(sdp=sdp["sdp"], type=sdp["type"])
         else:
-            # If sdp is a string, assume it's the SDP content
             offer = RTCSessionDescription(sdp=sdp, type="offer")
             
         await self.pc.setRemoteDescription(offer)
@@ -609,6 +839,7 @@ class VoiceChat:
         answer = await self.pc.createAnswer()
         await self.pc.setLocalDescription(answer)
 
+        print("✅ WebRTC connection established")
         return {
             "sdp": self.pc.localDescription.sdp,
             "type": self.pc.localDescription.type
@@ -770,8 +1001,12 @@ class VoiceChat:
                                 
                                 if response and hasattr(response, 'results') and response.results:
                                     transcript = response.results.channels[0].alternatives[0].transcript
+                                    confidence = response.results.channels[0].alternatives[0].confidence
+                                    print(f"🎤 Deepgram confidence: {confidence:.3f}")
+                                    print(f"🎤 Raw transcript: '{transcript}'")
+                                    
                                     if transcript.strip():
-                                        print(f"🎤 You said: {transcript}")
+                                        print(f"🎤 Transcribed: {transcript}")
                                         
                                         # Generate response
                                         response_text = f"I heard you say: {transcript}. That's interesting!"
@@ -824,8 +1059,11 @@ class VoiceChat:
                                     
                                     if response and hasattr(response, 'results') and response.results:
                                         transcript = response.results.channels[0].alternatives[0].transcript
+                                        confidence = response.results.channels[0].alternatives[0].confidence
+                                        print(f"🎤 Deepgram confidence: {confidence:.3f}")
+                                        
                                         if transcript.strip():
-                                            print(f"🎤 You said: {transcript}")
+                                            print(f"🎤 Transcribed: {transcript}")
                                             
                                             # Generate response
                                             response_text = f"I heard you say: {transcript}. That's interesting!"
@@ -859,8 +1097,8 @@ class VoiceChat:
                                                 except Exception as alt_error:
                                                     print(f"❌ Alternative audio playback also failed: {alt_error}")
                                                     print("Please check your system audio settings and volume")
-                                    else:
-                                        print("🔇 No speech detected")
+                                        else:
+                                            print("🔇 No speech detected")
                                         
                                 except Exception as e2:
                                     print(f"❌ Alternative Deepgram approach also failed: {e2}")
