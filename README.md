@@ -4,13 +4,70 @@ A real-time voice chat application built with Python, FastAPI, WebRTC, and Pipec
 
 ## 🚀 Features
 
-- **Real-time Voice Chat**: WebRTC-based browser interface with device selection
-- **Terminal Voice Chat**: Command-line interface for voice interaction
-- **Modular Pipeline Architecture**: Easy to extend with custom conversation flows
-- **Bicycle Assembly Guide**: Example implementation of step-by-step voice guidance
-- **Multiple ASR/TTS Options**: Deepgram, system TTS, and extensible for more services
-- **Audio Device Selection**: Interactive device selection for input/output
-- **Debug Tools**: Comprehensive audio analysis and testing utilities
+- **Real-time Voice Communication**: WebRTC-based audio streaming
+- **Speech-to-Text**: Powered by Deepgram for accurate transcription
+- **Text-to-Speech**: Natural voice synthesis using Cartesia
+- **Device Selection**: Choose specific microphones and speakers/headphones
+- **Web Interface**: Clean, responsive HTML client with device pickers
+- **Standalone Mode**: Console-based interface with device selection
+- **Cross-Platform**: Works on macOS, Linux, and Windows
+- **Multiple Transport Options**: Support for WebRTC, Daily.co, and Twilio
+- **Echo Response**: Demonstrates full voice processing pipeline
+- **Virtual Environment**: Automatic activation and prompt customization
+- **Audio Testing**: Built-in audio device testing functionality
+
+## 🛠️ Tech Stack
+
+- **Backend**: FastAPI, Python 3.11+
+- **WebRTC**: aiortc for real-time audio communication
+- **Speech Recognition**: Deepgram SDK v3
+- **Voice Synthesis**: Cartesia API
+- **Package Management**: uv for fast dependency resolution
+- **Development**: VS Code/Cursor integration with automatic environment activation
+- **Audio Processing**: NumPy for audio format conversion
+
+## 📋 Prerequisites
+
+- Python 3.11 or higher (tested with Python 3.13)
+- uv package manager
+- Microphone and speakers for testing
+- API keys for Deepgram and Cartesia
+
+### System Dependencies (Required for aiortc and av)
+
+**macOS:**
+```bash
+brew install opus ffmpeg pkg-config
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt-get update
+sudo apt-get install libopus-dev ffmpeg pkg-config
+```
+
+**CentOS/RHEL/Fedora:**
+```bash
+sudo yum install opus-devel ffmpeg pkg-config
+# or for newer versions:
+sudo dnf install opus-devel ffmpeg pkg-config
+```
+
+**Windows:**
+- Install [FFmpeg](https://ffmpeg.org/download.html) and add it to your PATH
+- Install [Opus](https://opus-codec.org/downloads/) or use a package manager like Chocolatey:
+  ```cmd
+  choco install ffmpeg
+  ```
+- Install [pkg-config](https://sourceforge.net/projects/pkgconfiglite/) for Windows
+
+## 🚀 Quick Start
+
+### 1. Clone the Repository
+```bash
+git clone git@github.com:KDZU-antisocial/frenemy-pipecat.git
+cd frenemy-pipecat
+```
 
 ## 🏗️ Architecture
 
