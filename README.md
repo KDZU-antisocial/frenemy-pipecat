@@ -113,6 +113,17 @@ frenemy-pipecat/
 
 ### Setup
 
+#### Quick Start (Recommended)
+```bash
+# Clone and setup everything automatically
+git clone <repository-url>
+cd frenemy-pipecat
+make dev-setup
+make env-check
+```
+
+#### Manual Setup
+
 1. **Clone the repository**:
    ```bash
    git clone <repository-url>
@@ -128,23 +139,105 @@ frenemy-pipecat/
 
 3. **Set up environment variables**:
    ```bash
+   # Option A: Use Makefile (recommended)
+   make env-setup
+   
+   # Option B: Manual setup
    cp env.template .env
    # Edit .env with your API keys:
    # DEEPGRAM_API_KEY=your_deepgram_key_here
    # CARTESIA_API_KEY=your_cartesia_key_here
    ```
 
-4. **Activate the virtual environment**:
+4. **Load environment variables**:
    ```bash
-   source .venv/bin/activate
+   # Option A: Use Makefile (recommended)
+   make env-load
+   
+   # Option B: Manual export
+   export DEEPGRAM_API_KEY=$(grep DEEPGRAM_API_KEY .env | cut -d'=' -f2)
+   export CARTESIA_API_KEY=$(grep CARTESIA_API_KEY .env | cut -d'=' -f2)
+   
+   # Option C: Permanent setup (adds to .zshrc)
+   # The .zshrc file is already configured to auto-load .env when in the project directory
    ```
 
+5. **Verify setup**:
+   ```bash
+   make env-check
+   make test-env
+   ```
+
+### Environment Variables
+
+The project requires these API keys:
+
+- **DEEPGRAM_API_KEY**: For speech-to-text transcription
+- **CARTESIA_API_KEY**: For text-to-speech synthesis (optional)
+- **CARTESIA_VOICE_ID**: Voice ID for Cartesia TTS (optional)
+
+#### Automatic Environment Loading
+
+The project provides multiple ways to load environment variables:
+
+1. **Makefile Commands** (Recommended): Use `make env-load` to load variables
+2. **Manual Export**: Export variables directly from `.env` file
+3. **Project Shell Integration**: The project `.zshrc` includes a `load_env()` function for convenience
+
+#### Environment Management Commands
+
+```bash
+# Setup environment file
+make env-setup
+
+# Load environment variables
+make env-load
+
+# Check environment configuration
+make env-check
+
+# Test environment with Deepgram
+make test-env
+```
+
+#### Manual Environment Loading
+
+If you prefer to load environment variables manually:
+
+```bash
+# Export from .env file
+export DEEPGRAM_API_KEY=$(grep DEEPGRAM_API_KEY .env | cut -d'=' -f2)
+export CARTESIA_API_KEY=$(grep CARTESIA_API_KEY .env | cut -d'=' -f2)
+
+# Or use the project's load_env function (if available)
+load_env
+```
+
 ## 🎯 Usage
+
+### Quick Start Commands
+
+Use these Makefile commands for easy startup:
+
+```bash
+# Start web voice chat
+make web
+
+# Start terminal voice chat
+make terminal
+
+# Start bicycle assembly guide
+make bicycle
+```
 
 ### WebRTC Voice Chat
 
 Start the web server:
 ```bash
+# Option A: Use Makefile (recommended)
+make web
+
+# Option B: Manual start
 python src/main.py
 ```
 
@@ -157,6 +250,10 @@ Open your browser to `http://localhost:8000` and:
 
 For a command-line voice experience:
 ```bash
+# Option A: Use Makefile (recommended)
+make terminal
+
+# Option B: Manual start
 python terminal_voice_chat.py
 ```
 
@@ -169,6 +266,10 @@ Features:
 
 Experience a step-by-step voice-guided assembly:
 ```bash
+# Option A: Use Makefile (recommended)
+make bicycle
+
+# Option B: Manual start
 python bicycle_voice_chat.py
 ```
 
@@ -330,6 +431,21 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - Create more specialized conversation modules
 - Add real-time audio visualization
 - Implement conversation memory and context
+
+## 🧩 Automated Requirements Check
+
+To verify your environment matches `requirements.txt` and catch any dependency issues, use the automated check:
+
+```bash
+make check
+```
+
+This will:
+- Check for dependency conflicts
+- List all installed packages
+- Show what would change if you re-applied `requirements.txt` (dry run, no changes made)
+
+**Tip:** Run this before development or submitting a pull request to ensure your environment is up to date!
 
 ---
 

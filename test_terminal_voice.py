@@ -22,7 +22,7 @@ class SimpleTerminalVoiceChat:
     def test_recording(self):
         """Test audio recording"""
         print("\n🎤 Testing audio recording...")
-        print("Please speak for 3 seconds when prompted...")
+        print("Please speak for 7 seconds when prompted...")
         
         try:
             # Create temporary file
@@ -31,13 +31,13 @@ class SimpleTerminalVoiceChat:
             
             # Record audio
             if sys.platform == "darwin":  # macOS
-                cmd = ["rec", "-r", str(self.sample_rate), "-c", "1", temp_filename, "trim", "0", "3"]
+                cmd = ["rec", "-r", str(self.sample_rate), "-c", "1", temp_filename, "trim", "0", "7"]
             elif sys.platform.startswith("linux"):  # Linux
-                cmd = ["rec", "-r", str(self.sample_rate), "-c", "1", temp_filename, "trim", "0", "3"]
+                cmd = ["rec", "-r", str(self.sample_rate), "-c", "1", temp_filename, "trim", "0", "7"]
             else:  # Windows
-                cmd = ["sox", "-d", "-r", str(self.sample_rate), "-c", "1", temp_filename, "trim", "0", "3"]
+                cmd = ["sox", "-d", "-r", str(self.sample_rate), "-c", "1", temp_filename, "trim", "0", "7"]
             
-            print("🎤 Recording 3 seconds... (speak now)")
+            print("🎤 Recording 7 seconds... (speak now)")
             result = subprocess.run(cmd, capture_output=True, text=True)
             
             if result.returncode == 0 and os.path.exists(temp_filename):

@@ -407,7 +407,7 @@ class BicycleVoiceChat:
         
         # Test recording
         print("1. Testing audio recording...")
-        audio_data = self.record_audio(3.0)  # 3 second test
+        audio_data = self.record_audio(7.0)  # 7 second test
         
         if audio_data is None:
             print("❌ Audio recording test failed")
