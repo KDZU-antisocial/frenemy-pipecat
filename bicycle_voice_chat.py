@@ -126,6 +126,54 @@ class BicycleVoiceChat:
         
         return input_devices, output_devices
     
+    def preview_voice(self, voice_name: str) -> bool:
+        """Preview a voice and ask user if they want to keep it"""
+        try:
+            print(f"\n🎵 Previewing voice: {voice_name}")
+            
+            # Play the introduction
+            intro_text = f"Hello! My name is {voice_name}."
+            self._speak_with_voice(intro_text, voice_name)
+            
+            # Play the test sentence
+            test_text = "The quick brown fox jumped over the lazy dog."
+            self._speak_with_voice(test_text, voice_name)
+            
+            # Ask for confirmation
+            while True:
+                try:
+                    response = input("\nDo you want to keep this voice? (y/n): ").lower().strip()
+                    if response in ['y', 'yes']:
+                        print(f"✅ Voice confirmed: {voice_name}")
+                        return True
+                    elif response in ['n', 'no']:
+                        print("🔄 Let's try another voice...")
+                        return False
+                    else:
+                        print("❌ Please enter 'y' for yes or 'n' for no.")
+                except KeyboardInterrupt:
+                    print("\n👋 Goodbye!")
+                    sys.exit(0)
+                    
+        except Exception as e:
+            print(f"❌ Error previewing voice: {e}")
+            return False
+    
+    def _speak_with_voice(self, text: str, voice_name: str):
+        """Speak text with a specific voice (for preview)"""
+        try:
+            if sys.platform == "darwin":  # macOS
+                subprocess.run(["say", "-v", voice_name, text], check=True)
+            elif sys.platform.startswith("linux"):  # Linux
+                subprocess.run(["espeak", text], check=True)
+            else:  # Windows
+                subprocess.run([
+                    "powershell", "-Command", 
+                    f"Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('{text}')"
+                ], check=True)
+        except Exception as e:
+            print(f"❌ TTS error: {e}")
+
     def select_audio_devices(self):
         """Let user select audio input and output devices"""
         print("\n🎯 Audio Device Selection")
@@ -173,30 +221,49 @@ class BicycleVoiceChat:
                 if result.returncode == 0:
                     voice_lines = result.stdout.split('\n')
                     for line in voice_lines:
-                        if line.strip() and '#' not in line:
-                            voice_name = line.split()[0] if line.split() else line.strip()
-                            voices.append(voice_name)
+                        if line.strip():
+                            # Extract full voice identifier (everything before the language code)
+                            parts = line.split()
+                            if len(parts) >= 2:
+                                # Get everything before the language code (e.g., "Eddy (German (Germany))")
+                                voice_name = parts[0]
+                                if '(' in line:
+                                    # For voices with language info like "Eddy (German (Germany))"
+                                    voice_name = line.split('(')[0].strip()
+                                voices.append(voice_name)
             except Exception as e:
                 print(f"⚠️ Could not get voices: {e}")
         
-        if voices:
+        # Remove duplicates while preserving order
+        unique_voices = []
+        seen = set()
+        for voice in voices:
+            if voice not in seen:
+                unique_voices.append(voice)
+                seen.add(voice)
+        
+        if unique_voices:
             print("Available voices:")
-            for i, voice in enumerate(voices[:20], 1):  # Show first 20
+            for i, voice in enumerate(unique_voices[:20], 1):  # Show first 20
                 print(f"  {i}. {voice}")
-            print(f"  {len(voices[:20]) + 1}. Use default voice (Alex)")
+            print(f"  {len(unique_voices[:20]) + 1}. Use default voice (Alex)")
             
-            while True:
+            voice_selected = False
+            while not voice_selected:
                 try:
-                    choice = input(f"\nEnter choice (1-{len(voices[:20]) + 1}): ").strip()
+                    choice = input(f"\nEnter choice (1-{len(unique_voices[:20]) + 1}): ").strip()
                     choice_num = int(choice)
-                    if 1 <= choice_num <= len(voices[:20]):
-                        self.playback_device = voices[choice_num - 1]
-                        print(f"✅ Selected voice: {self.playback_device}")
-                        break
-                    elif choice_num == len(voices[:20]) + 1:
-                        self.playback_device = "Alex"
-                        print("✅ Using default voice (Alex)")
-                        break
+                    if 1 <= choice_num <= len(unique_voices[:20]):
+                        selected_voice = unique_voices[choice_num - 1]
+                        if self.preview_voice(selected_voice):
+                            self.playback_device = selected_voice
+                            voice_selected = True
+                        # If preview returns False, continue the loop to select another voice
+                    elif choice_num == len(unique_voices[:20]) + 1:
+                        if self.preview_voice("Alex"):
+                            self.playback_device = "Alex"
+                            voice_selected = True
+                        # If preview returns False, continue the loop to select another voice
                     else:
                         print("❌ Invalid choice. Please try again.")
                 except ValueError:
