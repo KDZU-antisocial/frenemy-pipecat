@@ -124,7 +124,7 @@ full-setup: sys-install dev-setup
 	@echo "Next steps:"
 	@echo "1. Edit .env with your API keys"
 	@echo "2. Run 'make env-check' to verify"
-	@echo "3. Run 'make web', 'make terminal', or 'make bicycle' to start"
+	@echo "3. Run 'make web', 'make terminal', or 'make rover' to start"
 
 # Python execution helper
 python-run:
@@ -179,17 +179,17 @@ terminal: env-load
 		python3 terminal_voice_chat.py; \
 	fi
 
-bicycle: env-load
-	@echo "🚲 Starting bicycle assembly guide..."
+rover: env-load
+	@echo "🚗 Starting rover assembly guide..."
 	@if command -v uv >/dev/null 2>&1; then \
-		uv run python bicycle_voice_chat.py; \
+		uv run python rover_voice_chat.py; \
 	else \
 		echo "⚠️  uv not found. Installing uv is recommended for better dependency management."; \
 		echo "📦 Install uv with: curl -LsSf https://astral.sh/uv/install.sh | sh"; \
 		echo "🔄 Or visit: https://docs.astral.sh/uv/getting-started/installation/"; \
 		echo ""; \
 		echo "Falling back to python3..."; \
-		python3 bicycle_voice_chat.py; \
+		python3 rover_voice_chat.py; \
 	fi
 
 # Additional uv-specific commands

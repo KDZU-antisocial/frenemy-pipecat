@@ -82,7 +82,7 @@ The application uses Pipecat's modular pipeline approach with these core steps:
 
 ### Custom Modules
 
-- **BicycleAssemblyGuide**: Manages step-by-step assembly instructions with state tracking
+- **RoverAssemblyGuide**: Manages step-by-step assembly instructions with state tracking
 - **VoiceChat**: Handles WebRTC audio processing and device management
 - **TerminalVoiceChat**: Provides command-line voice interaction
 
@@ -95,8 +95,8 @@ frenemy-pipecat/
 │   ├── server.py                # FastAPI server
 │   ├── main.py                  # Application entry point
 │   └── static/                  # Web interface files
-├── bicycle_assembly_guide.py    # Custom pipeline step example
-├── bicycle_voice_chat.py        # Voice-enabled assembly guide
+├── rover_assembly_guide.py      # Custom pipeline step example
+├── rover_voice_chat.py          # Voice-enabled assembly guide
 ├── terminal_voice_chat.py       # Terminal voice chat
 ├── test_*.py                    # Audio testing and debugging scripts
 └── requirements.txt             # Python dependencies
@@ -226,8 +226,8 @@ make web
 # Start terminal voice chat
 make terminal
 
-# Start bicycle assembly guide
-make bicycle
+# Start rover assembly guide
+make rover
 ```
 
 ### WebRTC Voice Chat
@@ -262,15 +262,15 @@ Features:
 - Audio system testing
 - Voice commands: "quit", "help", "devices"
 
-### Bicycle Assembly Guide
+### Rover Assembly Guide
 
 Experience a step-by-step voice-guided assembly:
 ```bash
 # Option A: Use Makefile (recommended)
-make bicycle
+make rover
 
 # Option B: Manual start
-python bicycle_voice_chat.py
+python rover_voice_chat.py
 ```
 
 This demonstrates:
@@ -283,10 +283,10 @@ This demonstrates:
 
 ### Creating Custom Modules
 
-The bicycle assembly guide shows how to create custom Pipecat pipeline steps:
+The rover assembly guide shows how to create custom Pipecat pipeline steps:
 
 ```python
-class BicycleAssemblyGuide:
+class RoverAssemblyGuide:
     def __init__(self):
         self.state = AssemblyState()  # Track conversation state
         
