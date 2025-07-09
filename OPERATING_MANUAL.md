@@ -1,7 +1,7 @@
 # FRENEMY Pipecat Operating Manual 🎤
 
  **⚠️ IMPORTANT: This is NOT a conversational AI system!**
-
+git 
  Frenemy Pipecat is a **voice-controlled tutorial system** that combines:
 
 - **AI-powered speech recognition** (Deepgram Nova-2) for understanding your voice
